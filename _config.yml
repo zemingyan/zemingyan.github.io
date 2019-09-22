@@ -85,7 +85,7 @@ collections:
         output: true
         permalink: /wiki/:path/
 
-repository: zemingyan.github.io
+repository: git@github.com:zemingyan/zemingyan.github.io.git
 
 # ---------------- # 
 #      Comments    #
