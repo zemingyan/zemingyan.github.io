@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-cmn-Hans" prefix="og: http://ogp.me/ns#" class="han-init">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>HMaster 由于 MasterProcWals 过多导致启动选主超时 &mdash; ubuntu咸鱼</title>
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-css/css/primer.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-markdown/dist/user-content.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/octicons/octicons/octicons.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/collection.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/repo-card.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/mini-repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/boxed-group.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/common.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/share.js/dist/css/share.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/responsive.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/posts/index.css">
+    <!-- Latest compiled and minified CSS -->
+    
+
+    
+    <link rel="canonical" href="http://localhost:4000/2019/09/17/HBase-Master-Selection-timeout/">
+    <link rel="alternate" type="application/atom+xml" title="ubuntu咸鱼" href="http://localhost:4000/feed.xml">
+    <link rel="shortcut icon" href="http://localhost:4000/favicon.ico">
+    
+    <meta property="og:title" content="HMaster 由于 MasterProcWals 过多导致启动选主超时">
+      
+    <meta name="keywords" content="HBase">
+    <meta name="og:keywords" content="HBase">
+      
+    <meta name="description" content="由 MasterProcWals 状态日志过多导致的HBase Master重启失败问题">
+    <meta name="og:description" content="由 MasterProcWals 状态日志过多导致的HBase Master重启失败问题">
+      
+    
+    
+        
+    
+    <meta property="og:url" content="http://localhost:4000/2019/09/17/HBase-Master-Selection-timeout/">
+    <meta property="og:site_name" content="ubuntu咸鱼">
+    <meta property="og:type" content="article">
+    <meta property="og:locale" content="zh_CN" />
+    
+    <meta property="article:published_time" content="2019-09-17">
+    
+    <script src="http://localhost:4000/assets/vendor/jquery/dist/jquery.min.js"></script>
+    <script src="http://localhost:4000/assets/js/jquery-ui.js"></script>
+    <script type="text/javascript">
+    function toggleMenu() {
+        var nav = document.getElementsByClassName("site-header-nav")[0];
+        if (nav.style.display == "inline-flex") {
+          nav.style.display = "none";
+        } else {
+          nav.style.display = "inline-flex";
+        }
+    }
+    </script>
+</head>
+<body class="" data-mz="">
+    <header class="site-header">
+        <div class="container">
+            <h1><a href="http://localhost:4000/" title="ubuntu咸鱼"><span class="octicon octicon-mark-github"></span> ubuntu咸鱼</a></h1>
+            <button class="collapsed mobile-visible" type="button" onclick="toggleMenu();">
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+            </button>
+            <nav class="site-header-nav" role="navigation">
+                
+                <a href="http://localhost:4000/" class=" site-header-nav-item" target="" title="Home">Home</a>
+                
+                <a href="http://localhost:4000/categories/" class=" site-header-nav-item" target="" title="Blog">Blog</a>
+                
+                <a href="http://localhost:4000/open-source/" class=" site-header-nav-item" target="" title="Open-source">Open-source</a>
+                
+                <a href="http://localhost:4000/wiki/" class=" site-header-nav-item" target="" title="Wiki">Wiki</a>
+                
+                <a href="http://localhost:4000/links/" class=" site-header-nav-item" target="" title="Link">Link</a>
+                
+                <a href="http://localhost:4000/about/" class=" site-header-nav-item" target="" title="About">About</a>
+                
+            </nav>
+        </div>
+    </header>
+    <!-- / header -->
+
+
+    <section class="collection-head small geopattern" data-pattern-id="HMaster 由于 Mast">
+<div class="container">
+  <div class="columns">
+    <div class="column three-fourths">
+      <div class="collection-title">
+        <h1 class="collection-header">HMaster 由于 MasterProcWals 过多导致启动选主超时</h1>
+        <div class="collection-info">
+          
+          <span class="meta-info">
+            <span class="octicon octicon-calendar"></span> 2019/09/17
+          </span>
+          
+          
+          <span class="meta-info">
+            <span class="octicon octicon-file-directory"></span>
+            <a href="http://localhost:4000/categories/#HBase" title="HBase">HBase</a>
+          </span>
+          
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+<!-- / .banner -->
+<section class="container content">
+<div class="columns">
+  <div class="column three-fourths" >
+    <article class="article-content markdown-body">
+    <p>由 MasterProcWals 状态日志过多导致的HBase Master重启失败问题</p>
+
+<hr />
+
+<h4 id="前言">前言</h4>
+
+<p>由于 Kylin 业务迁移后， Master 日志中仍然报出 Kylin 相关表的合并日志，因此对 HBase 进行滚动重启，发现重启主 Master 后发生选主超时</p>
+
+<h4 id="分析">分析</h4>
+
+<p>CM 页面显示未发现有活动的 Master 并有红色告警提示</p>
+
+<p>但在 zookeeper 中 get /hbase/master 发现 100.106.37.5 的 master 选主已经成功</p>
+
+<p>查看对应日志发现一直刷如下信息</p>
+
+<p><img src="/images/blog/2019-09-17-6.png" alt="" height="80%" width="80%" /></p>
+
+<p>去 HDFS 查看该路径下有接近 20000 个这样的日志文件，且单副本达到了300余G的大小</p>
+
+<p>同时根据已知 Master 进入活动状态需要读取并实例化所有正在运行的程序当前记录在 /hbase/MasterProcWALs/ 目录下对应的文件。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>MasterProcWAL: HMaster记录管理操作，比如解决冲突的服务器，表创建和其它DDLs等操作到它的WAL文件中，
+这个WALs存储在MasterProcWALs目录下，它不像RegionServer的WALs，HMaster的WAL也支持弹性操作，
+就是如果Master服务器挂了，其它的Master接管的时候继续操作这个文件。
+</code></pre></div></div>
+
+<p>因此推断是由于 MasterProcWA 日志文件太大太多，回放时间超过了 Master 选主时间</p>
+
+<p>等2万个日志文件刷完以后，Master 报如下错误</p>
+
+<p><img src="/images/blog/2019-09-18-1.png" alt="" height="80%" width="80%" /></p>
+
+<p>再过 900000ms 这么长时间继续报该错误</p>
+
+<h4 id="解决">解决</h4>
+
+<p>根据日志和<a href="https://cloud.tencent.com/developer/article/1349438">由MasterProcWals状态日志过多导致的HBase Master重启失败问题</a>猜测
+可能是一个Bug</p>
+
+<p>move /hbase/MasterProcWALs 目录下的所有文件，重启 HBase Master 解决问题。</p>
+
+<p>重启 HBase 观察日志发现已经正常刷 Region 信息日志</p>
+
+<p><img src="/images/blog/2019-09-18-2.png" alt="" height="80%" width="80%" /></p>
+
+<p>去 HBase Shell 中操作，报错ERROR：master is initializing，please wait（在这之前，没有移动 MasterProcWALs 日志 选主超时的时候，此时报错为ERRAOR：master server not running yet），证明已经重启成功，大概五分钟之后，Master 选主成功，CM页面告消失，HBase Shell 能够正常操作</p>
+
+<h4 id="总结">总结</h4>
+
+<p>从这次事故以后 MasterProcWals 状态日志就没有过多的情况了。</p>
+
+<p>据 Fayson 大神说该问题主要和HBase某个分支的实现方式有关，据说已经重新设计了该实现方式，新的实现方式能够避免该问题，将在CDH 6中应用。</p>
+
+<hr />
+<p>参考链接</p>
+<ul>
+  <li><a href="https://cloud.tencent.com/developer/article/1349438">由MasterProcWals状态日志过多导致的HBase Master重启失败问题</a></li>
+</ul>
+
+
+    </article>
+    <div class="share">
+      <div class="share-component"></div>
+    </div>
+    <div class="comment">
+      
+
+  
+
+  
+        <div id="gitalk-container"></div>
+        <link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css">
+        <script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+        <script>
+        var gitalk = new Gitalk({
+            id: '/2019/09/17/HBase-Master-Selection-timeout/',
+            clientID: 'e171e4ef3d8128b9ad4c',
+            clientSecret: '8965fddcd7cfe0ba4bfb49550e23850dea558db3',
+            repo: 'zemingyan.github.io',
+            owner: 'zemingyan',
+            admin: ['zemingyan'],
+            labels: ['gitment'],
+            perPage: 50,
+        })
+        gitalk.render('gitalk-container')
+        </script>
+  
+
+
+    </div>
+  </div>
+  <div class="column one-fourth">
+    
+<h3>Search</h3>
+<div id="site_search">
+    <input type="text" id="search_box" placeholder="Search">
+</div>
+
+<ul id="search_results"></ul>
+
+<link rel="stylesheet" type="text/css" href="http://localhost:4000/assets/css/modules/sidebar-search.css">
+<script src="http://localhost:4000/assets/js/jekyll-search.min.js"></script>
+<script src="http://localhost:4000/assets/js/search.js"></script>
+
+<script type="text/javascript">
+SimpleJekyllSearch({
+    searchInput: document.getElementById('search_box'),
+    resultsContainer: document.getElementById('search_results'),
+    json: 'http://localhost:4000/assets/search_data.json',
+    searchResultTemplate: '<li><a href="{url}" title="{desc}">{title}</a></li>',
+    noResultsText: 'No results found',
+    limit: 10,
+    fuzzy: false,
+    exclude: ['Welcome']
+})
+</script>
+
+    
+
+    
+<h3 class="post-directory-title mobile-hidden">Table of Contents</h3>
+<div id="post-directory-module" class="mobile-hidden">
+  <section class="post-directory">
+  <!-- Links that trigger the jumping -->
+  <!-- Added by javascript below -->
+  <dl></dl>
+  </section>
+</div>
+
+<script src="http://localhost:4000/assets/js/jquery.toc.js"></script>
+
+  </div>
+</div>
+</section>
+<!-- /section.content -->
+
+    <footer class="container">
+        <div class="site-footer" role="contentinfo">
+            <div class="copyright left mobile-block">
+                    © 2018
+                    <span title="zemingyan">zemingyan</span>
+                    <a href="javascript:window.scrollTo(0,0)" class="right mobile-visible">TOP</a>
+            </div>
+
+            <ul class="site-footer-links right mobile-hidden">
+                <li>
+                    <a href="javascript:window.scrollTo(0,0)" >TOP</a>
+                </li>
+            </ul>
+            <a href="http://github.com/zemingyan/zemingyan.github.io" target="_blank" aria-label="view source code">
+                <span class="mega-octicon octicon-mark-github" title="GitHub"></span>
+            </a>
+            <ul class="site-footer-links mobile-hidden">
+                
+                <li>
+                    <a href="http://localhost:4000/" title="Home" target="">Home</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/categories/" title="Blog" target="">Blog</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/open-source/" title="Open-source" target="">Open-source</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/wiki/" title="Wiki" target="">Wiki</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/links/" title="Link" target="">Link</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/about/" title="About" target="">About</a>
+                </li>
+                
+                <li><a href="http://localhost:4000/feed.xml"><span class="octicon octicon-rss" style="color:orange;"></span></a></li>
+            </ul>
+
+        </div>
+    </footer>
+    <!-- / footer -->
+    <script src="http://localhost:4000/assets/vendor/share.js/dist/js/share.min.js"></script>
+    <script src="http://localhost:4000/assets/js/geopattern.js"></script>
+    <script src="http://localhost:4000/assets/js/prism.js"></script>
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/prism.css">
+    <script>
+      jQuery(document).ready(function($) {
+        // geopattern
+        $('.geopattern').each(function(){
+          $(this).geopattern($(this).data('pattern-id'));
+        });
+       // hljs.initHighlightingOnLoad();
+      });
+    </script>
+
+    
+
+    
+
+    
+
+    
+
+    
+    <div style="display:none">
+      <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-148378051-1', 'auto');
+        ga('send', 'pageview');
+
+      </script>
+    </div>
+    
+</body>
+</html>
+

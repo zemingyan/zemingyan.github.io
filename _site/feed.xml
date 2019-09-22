@@ -1,0 +1,900 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.6.2">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2019-09-22T13:35:29+00:00</updated><id>http://localhost:4000/</id><title type="html">ubuntu咸鱼</title><subtitle>Simple maybe, but not easy</subtitle><author><name>zemingyan</name></author><entry><title type="html">HDFS checkpoint</title><link href="http://localhost:4000/2019/09/20/HDFS-HA-checkpoint/" rel="alternate" type="text/html" title="HDFS checkpoint" /><published>2019-09-20T00:00:00+00:00</published><updated>2019-09-20T00:00:00+00:00</updated><id>http://localhost:4000/2019/09/20/HDFS-HA-checkpoint</id><content type="html" xml:base="http://localhost:4000/2019/09/20/HDFS-HA-checkpoint/">&lt;p&gt;Hadoop 2.0 HA 的 checkpoint 过程&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h4 id=&quot;前言&quot;&gt;前言&lt;/h4&gt;
+
+&lt;p&gt;HDFS 将文件系统的元数据信息存放在 fsimage 和一系列的 edits 文件中。&lt;/p&gt;
+
+&lt;p&gt;在启动 HDFS 集群时，系统会先加载 fsimage，然后逐个执行所有Edits文件中的每一条操作，来获取完整的文件系统元数据。&lt;/p&gt;
+
+&lt;h4 id=&quot;文件&quot;&gt;文件&lt;/h4&gt;
+
+&lt;p&gt;HDFS 的存储元数据是由 fsimage 和 edits 文件组成。fsimage 存放上次 checkpoint 生成的文件系统元数据，edits 存放文件系统操作日志。checkpoint的过程，就是合并 fsimage 和 edits 文件，然后生成最新的 fsimage 的过程。&lt;/p&gt;
+
+&lt;p&gt;fsimage文件: fsimage 里保存的是 HDFS 文件系统的元数据信息。每次 checkpoint 的时候生成一个新的 fsimage 文件，fsimage 文件同步保存在 active namenode 上和 standby namenode 上。是在 standby namenode 上生成并上传到 active namenode 上的。&lt;/p&gt;
+
+&lt;p&gt;edits文件: active namenode 会及时把 HDFS 的修改信息（创建，修改，删除等）写入到本地目录，和 journalnode 上的 edits 文件，每一个操作以一条数据的形式存放。edits文件默认每2分钟产生一个。正在写入的Edits文件以 edits_inprogress_* 格式存在。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-20-1.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;h4 id=&quot;checkpoint-过程&quot;&gt;checkpoint 过程&lt;/h4&gt;
+
+&lt;p&gt;开启HA的HDFS，有 active 和 standby namenode 两个 namenode 节点。他们的内存中保存了一样的集群元数据信息。&lt;/p&gt;
+
+&lt;p&gt;因为 standby namenode 已经将集群状态存储在内存中了，所以创建检查点checkpoint的过程只需要从内存中生成新的fsimage。&lt;/p&gt;
+
+&lt;p&gt;这里standby namenode称为SbNN，activenamenode称为ANN&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;SbNN查看是否满足创建检查点的条件
+    &lt;ul&gt;
+      &lt;li&gt;距离上次checkpoint的时间间隔 &amp;gt;= ${dfs.namenode.checkpoint.period}&lt;/li&gt;
+      &lt;li&gt;edits中的事务条数达到 ${dfs.namenode.checkpoint.txns} 限制&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;SbNN将内存中当前的状态保存成一个新的文件，命名为fsimage.ckpt_txid。其中txid是最后一个edit中的最后一条事务的ID（transaction ID）。然后为该fsimage文件创建一个MD5文件，并将fsimage文件重命名为fsimage_txid。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;SbNN向ANN发送一条HTTP GET请求。请求中包含了SbNN的域名，端口以及新fsimage的txid。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;ANN收到请求后，用获取到的信息反过来向SbNN再发送一条HTTP GET请求，获取新的fsimage文件。这个新的fsimage文件传输到ANN上后，也是先命名为fsimage.ckpt_txid，并为它创建一个MD5文件。然后再改名为fsimage_txid。fsimage过程完成。&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h4 id=&quot;checkpoint-相关配置&quot;&gt;checkpoint 相关配置&lt;/h4&gt;
+
+&lt;p&gt;&lt;strong&gt;dfs.namenode.checkpoint.period&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;两次检查点创建之间的固定时间间隔，默认3600，即1小时&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;dfs.namenode.checkpoint.txns&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;未检查的事务数量。若没检查事务数达到这个值，也触发一次checkpoint，1,000,000&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;dfs.namenode.checkpoint.check.period&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;standby namenode检查是否满足建立checkpoint的条件的检查周期。默认60，即每1min检查一次&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;dfs.namenode.num.checkpoints.retained&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;在namenode上保存的fsimage的数目，超出的会被删除。默认保存2个&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;dfs.namenode.num.checkpoints.retained&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;最多能保存的edits文件个数，默认为1,000,000. 官方解释是为防止standby namenode宕机导致edits文件堆积的情况，设置的限制&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;dfs.ha.tail-edits.period&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;standby namenode每隔多长时间去检测新的Edits文件。只检测完成了的Edits， 不检测inprogress的文件。(不是很明白)&lt;/p&gt;
+
+&lt;hr /&gt;
+&lt;p&gt;参考链接&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://blog.cloudera.com/a-guide-to-checkpointing-in-hadoop/&quot;&gt;A Guide to Checkpointing in Hadoop&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://blog.csdn.net/Amber_amber/article/details/47003589&quot;&gt;Hadoop2.0 HA的checkpoint过程&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>zemingyan</name></author><summary type="html">Hadoop 2.0 HA 的 checkpoint 过程</summary></entry><entry><title type="html">HBase 误删表恢复</title><link href="http://localhost:4000/2019/09/17/HBase-wrong-deletion-table/" rel="alternate" type="text/html" title="HBase 误删表恢复" /><published>2019-09-17T00:00:00+00:00</published><updated>2019-09-17T00:00:00+00:00</updated><id>http://localhost:4000/2019/09/17/HBase-wrong-deletion-table</id><content type="html" xml:base="http://localhost:4000/2019/09/17/HBase-wrong-deletion-table/">&lt;p&gt;HBase 误删表&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h4 id=&quot;前言&quot;&gt;前言&lt;/h4&gt;
+
+&lt;p&gt;HBase 的数据主要存储在分布式文件系统 HFile 和 HLog 两类文件中。Compaction操作会将合并完的不用的小 HFile 移动到 archive 文件夹。WAL 文件在数据完全 flush 到 HFile 中时便会过期，
+被移动到oldWALs文件夹中。&lt;/p&gt;
+
+&lt;p&gt;HMaster 上的定时线程 HFileCleaner/LogCleaner 周期性扫描 archive 目录和 oldWALs 目录, 判断目录下的HFile或者WAL是否可以被删除，如果可以,就直接删除文件。&lt;/p&gt;
+
+&lt;h4 id=&quot;分析&quot;&gt;分析&lt;/h4&gt;
+
+&lt;p&gt;关于 HFile 文件和 HLog 文件的过期时间，其中涉及到两个参数&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;hbase.master.logcleaner.ttl&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;HLog在 oldWAL 目录中生存的最长时间，过期则被 Master 的线程清理，默认是600000（ms）&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-17-2.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;hbase.master.hfilecleaner.plugins&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;HFile的清理插件列表，逗号分隔，被HFileService调用，可以自定义，默认org.apache.hadoop.hbase.master.cleaner.TimeToLiveHFileCleaner。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-17-3.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;官方文档解释&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-17-4.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;在类org.apache.hadoop.hbase.master.cleaner.TimeToLiveHFileCleaner中，可以看到如下的设置&lt;/p&gt;
+
+&lt;p&gt;默认 HFile 的失效时间是5分钟。由于一般的hadoop平台默认都没有对该参数的设置，可以在配置选项中添加对hbase.master.hfilecleaner.ttl的设置。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-17-5.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;实际在测试的过程中，删除一个hbase表，在archive文件夹中，会立即发现删除表的所有region数据（不包含regioninfo、tabledesc等元数据文件），等待不到6分钟所有数据消失，说明所有数据生命周期结束，被删除。&lt;/p&gt;
+
+&lt;h4 id=&quot;恢复&quot;&gt;恢复&lt;/h4&gt;
+
+&lt;p&gt;删除表步骤 distable + drop。当然 truncate 清除表数据也可以通过这种方式恢复&lt;/p&gt;
+
+&lt;h5 id=&quot;抢救数据&quot;&gt;抢救数据&lt;/h5&gt;
+
+&lt;p&gt;保证在删除表之后的5分钟之内将 HDFS 目录 /hbase/archive/ 文件夹下的表 region 数据拷贝到 /tmp 下。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;hadoop fs -cp /hbase/archive/data/default/{tableName}  /tmp
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h5 id=&quot;建表&quot;&gt;建表&lt;/h5&gt;
+
+&lt;p&gt;新建同名和同列族的表&lt;/p&gt;
+
+&lt;p&gt;注意: &lt;strong&gt;请提供表结构，如果表结构未提供，将很难恢复&lt;/strong&gt;&lt;/p&gt;
+
+&lt;h5 id=&quot;拷贝&quot;&gt;拷贝&lt;/h5&gt;
+
+&lt;p&gt;将抢救下来的 region 数据拷贝到 hbase 表对应的目录下&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;hadoop fs -cp /tmp/data/default/test/* /hbase/data/default/test
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h5 id=&quot;元数据修复&quot;&gt;元数据修复&lt;/h5&gt;
+
+&lt;p&gt;HDFS 里有对应的 Region 数据了。想当然是想到用-fixMeta修复&lt;/p&gt;
+
+&lt;p&gt;-fixMeta: 主要修复.regioninfo文件和hbase:meta元数据表的不一致。修复的原则是以HDFS文件为准：如果region在HDFS上存在，但在hbase.meta表中不存在，就会在hbase:meta表中添加一条记录。反之如果在HDFS上不存在，而在hbase:meta表中存在，就会将hbase:meta表中对应的记录删除。&lt;/p&gt;
+
+&lt;p&gt;但是因为缺少 regioninfo 信息，不能直接用 -fixMeta 修复。所以得先修复下 regioninfo、tableinfo&lt;/p&gt;
+
+&lt;p&gt;-fixHdfsOrphans: 尝试修复hdfs中没有.regioninfo文件的region目录&lt;/p&gt;
+
+&lt;p&gt;-fixTableOrphans: 尝试修复hdfs中没有.tableinfo文件的table目录（只支持在线模式）&lt;/p&gt;
+
+&lt;p&gt;尝试先用fixHdfsOrphans,fixTableOrphans,fixMeta的顺序进行修复，失败。&lt;/p&gt;
+
+&lt;p&gt;最后用-repair修复，但是内部的执行顺序可能不对，执行一遍失败，多执行几遍，成功。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;sudo -u hbase hbase hbck -repair {tableName}
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h5 id=&quot;验证&quot;&gt;验证&lt;/h5&gt;
+
+&lt;p&gt;通过 HBase Shell 验证&lt;/p&gt;
+
+&lt;h4 id=&quot;总结&quot;&gt;总结&lt;/h4&gt;
+
+&lt;p&gt;-repair 属于高危修复命令。要慎用，我指定 tableName 是避免 repair 影响到其他表&lt;/p&gt;
+
+&lt;p&gt;这里是说删表恢复。误删表数据也有恢复方法。&lt;a href=&quot;https://mp.weixin.qq.com/s/XBwan9ZOCrOM565Cdw6Z0A&quot;&gt;误删HBase数据如何抢救？&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;感兴趣自己研读&lt;/p&gt;
+
+&lt;hr /&gt;
+&lt;p&gt;参考链接&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://blog.csdn.net/chaolovejia/article/details/48265335&quot;&gt;HDFS和Hbase误删数据恢复&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.cnblogs.com/yingjie2222/p/6377359.html&quot;&gt;HBase之disable+drop删除表疑点解惑&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>zemingyan</name></author><summary type="html">HBase 误删表</summary></entry><entry><title type="html">HMaster 由于 MasterProcWals 过多导致启动选主超时</title><link href="http://localhost:4000/2019/09/17/HBase-Master-Selection-timeout/" rel="alternate" type="text/html" title="HMaster 由于 MasterProcWals 过多导致启动选主超时" /><published>2019-09-17T00:00:00+00:00</published><updated>2019-09-17T00:00:00+00:00</updated><id>http://localhost:4000/2019/09/17/HBase-Master-Selection-timeout</id><content type="html" xml:base="http://localhost:4000/2019/09/17/HBase-Master-Selection-timeout/">&lt;p&gt;由 MasterProcWals 状态日志过多导致的HBase Master重启失败问题&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h4 id=&quot;前言&quot;&gt;前言&lt;/h4&gt;
+
+&lt;p&gt;由于 Kylin 业务迁移后， Master 日志中仍然报出 Kylin 相关表的合并日志，因此对 HBase 进行滚动重启，发现重启主 Master 后发生选主超时&lt;/p&gt;
+
+&lt;h4 id=&quot;分析&quot;&gt;分析&lt;/h4&gt;
+
+&lt;p&gt;CM 页面显示未发现有活动的 Master 并有红色告警提示&lt;/p&gt;
+
+&lt;p&gt;但在 zookeeper 中 get /hbase/master 发现 100.106.37.5 的 master 选主已经成功&lt;/p&gt;
+
+&lt;p&gt;查看对应日志发现一直刷如下信息&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-17-6.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;去 HDFS 查看该路径下有接近 20000 个这样的日志文件，且单副本达到了300余G的大小&lt;/p&gt;
+
+&lt;p&gt;同时根据已知 Master 进入活动状态需要读取并实例化所有正在运行的程序当前记录在 /hbase/MasterProcWALs/ 目录下对应的文件。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;MasterProcWAL: HMaster记录管理操作，比如解决冲突的服务器，表创建和其它DDLs等操作到它的WAL文件中，
+这个WALs存储在MasterProcWALs目录下，它不像RegionServer的WALs，HMaster的WAL也支持弹性操作，
+就是如果Master服务器挂了，其它的Master接管的时候继续操作这个文件。
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;因此推断是由于 MasterProcWA 日志文件太大太多，回放时间超过了 Master 选主时间&lt;/p&gt;
+
+&lt;p&gt;等2万个日志文件刷完以后，Master 报如下错误&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-18-1.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;再过 900000ms 这么长时间继续报该错误&lt;/p&gt;
+
+&lt;h4 id=&quot;解决&quot;&gt;解决&lt;/h4&gt;
+
+&lt;p&gt;根据日志和&lt;a href=&quot;https://cloud.tencent.com/developer/article/1349438&quot;&gt;由MasterProcWals状态日志过多导致的HBase Master重启失败问题&lt;/a&gt;猜测
+可能是一个Bug&lt;/p&gt;
+
+&lt;p&gt;move /hbase/MasterProcWALs 目录下的所有文件，重启 HBase Master 解决问题。&lt;/p&gt;
+
+&lt;p&gt;重启 HBase 观察日志发现已经正常刷 Region 信息日志&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-18-2.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;去 HBase Shell 中操作，报错ERROR：master is initializing，please wait（在这之前，没有移动 MasterProcWALs 日志 选主超时的时候，此时报错为ERRAOR：master server not running yet），证明已经重启成功，大概五分钟之后，Master 选主成功，CM页面告消失，HBase Shell 能够正常操作&lt;/p&gt;
+
+&lt;h4 id=&quot;总结&quot;&gt;总结&lt;/h4&gt;
+
+&lt;p&gt;从这次事故以后 MasterProcWals 状态日志就没有过多的情况了。&lt;/p&gt;
+
+&lt;p&gt;据 Fayson 大神说该问题主要和HBase某个分支的实现方式有关，据说已经重新设计了该实现方式，新的实现方式能够避免该问题，将在CDH 6中应用。&lt;/p&gt;
+
+&lt;hr /&gt;
+&lt;p&gt;参考链接&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://cloud.tencent.com/developer/article/1349438&quot;&gt;由MasterProcWals状态日志过多导致的HBase Master重启失败问题&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>zemingyan</name></author><summary type="html">由 MasterProcWals 状态日志过多导致的HBase Master重启失败问题</summary></entry><entry><title type="html">HMaster 定期清理 archive</title><link href="http://localhost:4000/2019/09/16/HMaster-clean-archive/" rel="alternate" type="text/html" title="HMaster 定期清理 archive" /><published>2019-09-16T00:00:00+00:00</published><updated>2019-09-16T00:00:00+00:00</updated><id>http://localhost:4000/2019/09/16/HMaster-clean-archive</id><content type="html" xml:base="http://localhost:4000/2019/09/16/HMaster-clean-archive/">&lt;p&gt;HFileCleaner 定期清理 archive 下的文件&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h4 id=&quot;前言&quot;&gt;前言&lt;/h4&gt;
+
+&lt;p&gt;表一旦删除，刚开始是可以在 archive 中看到删除表的数据文件，但是等待一段时间后 archive 中的数据就会被彻底删除，再也无法找回。&lt;/p&gt;
+
+&lt;p&gt;这是因为 master 上会启动一个定期清理 archive 中垃圾文件的线程（HFileCleaner），定期会对这些被删除的垃圾文件进行清理。&lt;/p&gt;
+
+&lt;h4 id=&quot;分析&quot;&gt;分析&lt;/h4&gt;
+
+&lt;p&gt;定时清理任务的插件设置会从 hbase.master.hfilecleaner.plugins 配置里加载所有 BaseHFileCleanerDelegate。 只有所有 delegate 都同意才能被删除。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-17-1.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;就是通过 HFileLinkCleaner，SnapshotHFileCleaner，TimeToLiveHFileCleaner 这三种规则的约束来清理archive中的数据&lt;/p&gt;
+
+&lt;h5 id=&quot;hfilelinkcleaner&quot;&gt;HFileLinkCleaner&lt;/h5&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;/**
+ * HFileLink cleaner that determines if a hfile should be deleted.
+ * HFiles can be deleted only if there're no links to them.
+ *
+ * When a HFileLink is created a back reference file is created in:
+ *      /hbase/archive/table/region/cf/.links-hfile/ref-region.ref-table
+ * To check if the hfile can be deleted the back references folder must be empty.
+ */
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;如果对archive中的文件的引用不存在了，则可以删除&lt;/p&gt;
+
+&lt;p&gt;问题: /hbase/archive/table/region/cf/.links-hfile/ref-region.ref-table 从何而来？
+回答: HBase 做 clone_snapshot 的时候。有兴趣可以自看&lt;a href=&quot;http://hbasefly.com/2017/09/17/hbase-snapshot/&quot;&gt;HBase原理 – 分布式系统中snapshot是怎么玩的？&lt;/a&gt;&lt;/p&gt;
+
+&lt;h5 id=&quot;snapshothfilecleaner&quot;&gt;SnapshotHFileCleaner&lt;/h5&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;/**
+ * Implementation of a file cleaner that checks if a hfile is still used by snapshots of HBase
+ * tables.
+ */
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;未被 snapshots 引用的文件，可以删除&lt;/p&gt;
+
+&lt;p&gt;问题: snapshot 为嘛会引用到 archive 中的文件？
+回答: 表做了snapshot后，此时该表的元数据以及相关的link文件都存储在snapshot中, 该表发生 compact 操作前会将原始表移动到 archive 目录下再执行 compact。对于表删除操作，正常情况也会将删除表数据移动到archive目录下），这样snapshot对应的元数据就不会失去意义，只不过原始数据不再存在于数据目录下，而是移动到了archive目录下。&lt;/p&gt;
+
+&lt;h5 id=&quot;timetolivehfilecleaner&quot;&gt;TimeToLiveHFileCleaner&lt;/h5&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;/**
+ * HFile cleaner that uses the timestamp of the hfile to determine if it should be deleted. By
+ * default they are allowed to live for {@value #DEFAULT_TTL}
+ */
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;默认清理时间超过5分钟的HFile&lt;/p&gt;
+
+&lt;h4 id=&quot;实战&quot;&gt;实战&lt;/h4&gt;
+
+&lt;p&gt;在查看公司 HBase 集群 archive 文件夹发现有 2018 年的数据未清理。。。&lt;/p&gt;
+
+&lt;p&gt;按所学知识正常的情况下超过5分钟的HFile就会被清理。&lt;/p&gt;
+
+&lt;p&gt;继续翻阅文件发现了 links-hfile 文件。因此推断是因为有 clone 的表还依赖着。&lt;/p&gt;
+
+&lt;p&gt;links-hfile 文件的消失是在 clone 表做 Compact 之后会消失。但是因为 clone 表已经一直没有写入，所以 region 没有做 majorCompat, 后台线程周期性检查也会因为 needsCompaction() 方法去判断没有足够多的文件触发了 Compaction&lt;/p&gt;
+
+&lt;p&gt;只能手动触发 majorCompact，一旦手动触发，HBase 会不做很多自动化检查，直接执行合并。&lt;/p&gt;
+
+&lt;p&gt;等待一段时间回看发现 archive 文件的2018年数据已清理&lt;/p&gt;
+
+&lt;p&gt;整个过程忘记留图了。。。导致只能后续口诉加回忆。&lt;/p&gt;
+
+&lt;hr /&gt;
+&lt;p&gt;参考链接&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.jianshu.com/p/f82aafd7b381&quot;&gt;HMaster 功能之定期清理archive&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>zemingyan</name></author><summary type="html">HFileCleaner 定期清理 archive 下的文件</summary></entry><entry><title type="html">Flink Watermarks</title><link href="http://localhost:4000/2019/09/01/Flink-Watermark/" rel="alternate" type="text/html" title="Flink Watermarks" /><published>2019-09-01T00:00:00+00:00</published><updated>2019-09-01T00:00:00+00:00</updated><id>http://localhost:4000/2019/09/01/Flink-Watermark</id><content type="html" xml:base="http://localhost:4000/2019/09/01/Flink-Watermark/">&lt;p&gt;初学Flink，对Watermarks的一些理解和感悟&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h4 id=&quot;重要的概念&quot;&gt;重要的概念&lt;/h4&gt;
+
+&lt;p&gt;Window: Window是处理无界流的关键，Windows将流拆分为一个个有限大小的buckets，可以可以在每一个buckets中进行计算&lt;/p&gt;
+
+&lt;p&gt;start_time,end_time: 当Window时时间窗口的时候，每个window都会有一个开始时间和结束时间（前开后闭），这个时间是系统时间&lt;/p&gt;
+
+&lt;p&gt;event-time: 事件发生时间，是事件发生所在设备的当地时间，比如一个点击事件的时间发生时间，是用户点击操作所在的手机或电脑的时间&lt;/p&gt;
+
+&lt;p&gt;Watermarks: 可以把他理解为一个水位线，这个Watermarks在不断的变化，一旦Watermarks大于了某个window的end_time，就会触发此window的计算，Watermarks就是用来触发window计算的&lt;/p&gt;
+
+&lt;h4 id=&quot;处理乱序的数据流&quot;&gt;处理乱序的数据流&lt;/h4&gt;
+
+&lt;p&gt;什么是乱序呢？可以理解为数据到达的顺序和他的event-time排序不一致。导致这的原因有很多，比如延迟，消息积压，重试等等&lt;/p&gt;
+
+&lt;p&gt;因为Watermarks是用来触发window窗口计算的，我们可以根据事件的event-time，计算出Watermarks，并且设置一些延迟，给迟到的数据一些机会。&lt;/p&gt;
+
+&lt;p&gt;可以阅读&lt;a href=&quot;https://blog.csdn.net/a6822342/article/details/78064815&quot;&gt;Flink事件时间处理和水印&lt;/a&gt;有个认识&lt;/p&gt;
+
+&lt;h4 id=&quot;生成-timestamp-和-watermark&quot;&gt;生成 Timestamp 和 Watermark&lt;/h4&gt;
+
+&lt;p&gt;请仔细阅读&lt;a href=&quot;https://www.jianshu.com/p/8c4a1861e49f&quot;&gt;Flink生成Timestamp和Watermark&lt;/a&gt;对应&lt;a href=&quot;https://ci.apache.org/projects/flink/flink-docs-release-1.8/dev/event_timestamps_watermarks.html&quot;&gt;官网&lt;/a&gt;&lt;/p&gt;
+
+&lt;h4 id=&quot;kafka-consumer-时间戳提取水位生成&quot;&gt;Kafka consumer 时间戳提取/水位生成&lt;/h4&gt;
+
+&lt;p&gt;自定义时间戳提取器/水位生成器，具体方法参见这里，然后按照下面的方式传递给consumer&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;Properties properties = new Properties();
+properties.setProperty(&quot;bootstrap.servers&quot;, &quot;localhost:9092&quot;);
+// only required for Kafka 0.8
+properties.setProperty(&quot;zookeeper.connect&quot;, &quot;localhost:2181&quot;);
+properties.setProperty(&quot;group.id&quot;, &quot;test&quot;);
+ 
+FlinkKafkaConsumer08&amp;lt;String&amp;gt; myConsumer =
+    new FlinkKafkaConsumer08&amp;lt;&amp;gt;(&quot;topic&quot;, new SimpleStringSchema(), properties);
+myConsumer.assignTimestampsAndWatermarks(new CustomWatermarkEmitter());
+ 
+DataStream&amp;lt;String&amp;gt; stream = env
+    .addSource(myConsumer)
+    .print();
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;CustomWatermarkEmitter 为自定义的时间戳提取器/水位生成器, 具体方法参见&lt;a href=&quot;https://ci.apache.org/projects/flink/flink-docs-release-1.8/dev/event_timestamp_extractors.html&quot;&gt;这里&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;在内部，Flink 会为每个Kafka分区都执行一个对应的assigner实例。一旦指定了这样的assigner，对于每条Kafka中的消息，extractTimestamp(T element, long previousElementTimestamp)方法会被调用来给消息分配时间戳，而getCurrentWatermark()方法（定时生成水位）或checkAndGetNextWatermark(T lastElement, long extractedTimestamp)方法(基于特定条件)会被调用以确定是否发送新的水位值。&lt;/p&gt;
+
+&lt;p&gt;请仔细阅读&lt;a href=&quot;https://www.jianshu.com/p/8c4a1861e49f&quot;&gt;Flink生成Timestamp和Watermark&lt;/a&gt;对应&lt;a href=&quot;https://ci.apache.org/projects/flink/flink-docs-release-1.8/dev/event_timestamps_watermarks.html&quot;&gt;官网&lt;/a&gt;&lt;/p&gt;
+
+&lt;hr /&gt;
+&lt;p&gt;参考链接&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://cloud.tencent.com/developer/article/1406134&quot;&gt;Apache-Flink深度解析-DataStream-Connectors之Kafka&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>zemingyan</name></author><summary type="html">初学Flink，对Watermarks的一些理解和感悟</summary></entry><entry><title type="html">Flink kafka connector</title><link href="http://localhost:4000/2019/09/01/Flink-Kafka-Connector/" rel="alternate" type="text/html" title="Flink kafka connector" /><published>2019-09-01T00:00:00+00:00</published><updated>2019-09-01T00:00:00+00:00</updated><id>http://localhost:4000/2019/09/01/Flink-Kafka-Connector</id><content type="html" xml:base="http://localhost:4000/2019/09/01/Flink-Kafka-Connector/">&lt;p&gt;生产环境中最常用到的 Flink kafka connector&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h4 id=&quot;前言&quot;&gt;前言&lt;/h4&gt;
+
+&lt;p&gt;生产环境中最常用到的 Flink kafka connector&lt;/p&gt;
+
+&lt;p&gt;一是 Flink kafka Consumer，一个是 Flink kafka Producer。&lt;/p&gt;
+
+&lt;p&gt;首先看一个例子来串联下 Flink kafka connector。代码逻辑里主要是从 kafka 里读数据，然后做简单的处理，再写回到 kafka 中。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-01-5.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;分别用红框框出如何构造一个 Source sink Function。Flink 提供了现成的构造FlinkKafkaConsumer、Producer 的接口，可以直接使用。这里需要注意，因为 kafka 有多个版本，多个版本之间的接口协议会不同。Flink 针对不同版本的 kafka 有相应的版本的 Consumer 和 Producer。例如：针对 08、09、10、11 版本，Flink 对应的 consumer 分别是 FlinkKafkaConsumer 08、09、010、011，producer 也是。&lt;/p&gt;
+
+&lt;h4 id=&quot;consumer&quot;&gt;Consumer&lt;/h4&gt;
+
+&lt;h5 id=&quot;反序列化数据&quot;&gt;反序列化数据&lt;/h5&gt;
+
+&lt;p&gt;Kafka 中数据都是以二进制 byte 形式存储的。读到 Flink 系统中之后，需要将二进制数据转化为具体的 java、scala 对象。&lt;/p&gt;
+
+&lt;p&gt;具体需要实现一个 schema 类，定义如何序列化和反序列数据。&lt;/p&gt;
+
+&lt;p&gt;反序列化时需要实现 DeserializationSchema 接口，并重写 deserialize(byte[] message) 函数&lt;/p&gt;
+
+&lt;p&gt;如果是反序列化 kafka 中 kv 的数据时，需要实现 KeyedDeserializationSchema 接口，并重写 deserialize(byte[] messageKey, byte[] message, String topic, int partition, long offset) 函数。&lt;/p&gt;
+
+&lt;p&gt;如果想自己实现 Schema ，可以参看&lt;a href=&quot;https://juejin.im/post/5c8fd4dd5188252d92095995#heading-8&quot;&gt;Apache-Flink深度解析-DataStream-Connectors&lt;/a&gt;之Kafka Simple ETL 部分&lt;/p&gt;
+
+&lt;p&gt;Flink 中也提供了一些常用的序列化反序列化的 schema 类。&lt;a href=&quot;https://lihuimintu.github.io/2019/08/16/Flink-Kafka-deserialization&quot;&gt;Flink-Kafka 内置 Schemas&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;例如，SimpleStringSchema，按字符串方式进行序列化、反序列化。 &lt;br /&gt;
+TypeInformationSerializationSchema，它可根据 Flink 的 TypeInformation 信息来推断出需要选择的 schema。 &lt;br /&gt;
+JsonDeserializationSchema 使用 jackson 反序列化 json 格式消息，并返回 ObjectNode，可以使用 .get(“property”) 方法来访问相应字段。&lt;/p&gt;
+
+&lt;h5 id=&quot;消费起始位置设置&quot;&gt;消费起始位置设置&lt;/h5&gt;
+
+&lt;p&gt;设置作业从 kafka 消费数据最开始的起始位置，这一部分 Flink 也提供了非常好的封装。在构造好的 FlinkKafkaConsumer 类后面调用如下相应函数，设置合适的起始位置。&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;setStartFromGroupOffsets，也是默认的策略，
+从 group offset 位置读取数据，group offset 指的是 kafka broker 
+端记录的某个 group 的最后一次的消费位置。但是 kafka broker 端没有该 group 信息，或者 group offset 无效的话，
+将会根据 kafka 的参数”auto.offset.reset”的设置来决定从哪个位置开始消费，”auto.offset.reset” 默认为 largest。。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;setStartFromEarliest，从 kafka 最早的位置开始读取。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;setStartFromLatest，从 kafka 最新的位置开始读取。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;setStartFromTimestamp(long)，从时间戳大于或等于指定时间戳的位置开始读取。Kafka 时戳，是指 kafka 为每条消息增加另一个时戳。该时戳可以表示消息在 proudcer 端生成时的时间、或进入到 kafka broker 时的时间。&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;setStartFromSpecificOffsets，从指定分区的 offset 位置开始读取，如指定的 offsets 中不存某个分区，该分区从 group offset 位置开始读取。此时需要用户给定一个具体的分区、offset 的集合。&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-01-6.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;需要注意的是，因为 Flink 框架有容错机制，如果作业故障，如果作业开启 checkpoint，会从上一次 checkpoint 状态开始恢复。或者在停止作业的时候主动做 savepoint，启动作业时从 savepoint 开始恢复。这两种情况下恢复作业时，作业消费起始位置是从之前保存的状态中恢复，与上面提到跟 kafka 这些单独的配置无关。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;如果该作业是从 checkpoint 或 savepoint 中恢复，则所有设置初始 offset 的函数均将失效，初始 offset 将从 checkpoint 中恢复。&lt;/strong&gt;&lt;/p&gt;
+
+&lt;h5 id=&quot;topic-和-partition-动态发现&quot;&gt;topic 和 partition 动态发现&lt;/h5&gt;
+
+&lt;p&gt;实际的生产环境中可能有这样一些需求，比如场景一，有一个 Flink 作业需要将五份数据聚合到一起，五份数据对应五个 kafka topic，随着业务增长，新增一类数据，同时新增了一个 kafka topic，如何在不重启作业的情况下作业自动感知新的 topic。场景二，作业从一个固定的 kafka topic 读数据，开始该 topic 有 10 个 partition，但随着业务的增长数据量变大，需要对 kafka partition 个数进行扩容，由 10 个扩容到 20。该情况下如何在不重启作业情况下动态感知新扩容的 partition？&lt;/p&gt;
+
+&lt;p&gt;针对上面的两种场景，首先需要在构建 FlinkKafkaConsumer 时的 properties 中设置 flink.partition-discovery.interval-millis 参数为非负值，表示开启动态发现的开关，以及设置的时间间隔。此时 FlinkKafkaConsumer 内部会启动一个单独的线程定期去 kafka 获取最新的 meta 信息。针对场景一，还需在构建 FlinkKafkaConsumer 时，topic 的描述可以传一个正则表达式描述的 pattern。每次获取最新 kafka meta 时获取正则匹配的最新 topic 列表。针对场景二，设置前面的动态发现参数，在定期获取 kafka 最新 meta 信息时会匹配新的 partition。为了保证数据的正确性，新发现的 partition 从最早的位置开始读取。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-01-7.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;h5 id=&quot;commit-offset-方式&quot;&gt;commit offset 方式&lt;/h5&gt;
+
+&lt;p&gt;Flink kafka consumer commit offset 方式需要区分是否开启了 checkpoint。&lt;/p&gt;
+
+&lt;p&gt;如果 checkpoint 关闭，commit offset 要依赖于 kafka 客户端的 auto commit。需设置 enable.auto.commit，auto.commit.interval.ms 参数到 consumer properties，就会按固定的时间间隔定期 auto commit offset 到 kafka。&lt;/p&gt;
+
+&lt;p&gt;如果开启 checkpoint，这个时候作业消费的 offset 是 Flink 在 state 中自己管理和容错。此时提交 offset 到 kafka，一般都是作为外部进度的监控，想实时知道作业消费的位置和 lag 情况。此时需要 setCommitOffsetsOnCheckpoints 为 true 来设置当 checkpoint 成功时提交 offset 到 kafka。此时 commit offset 的间隔就取决于 checkpoint 的间隔，所以此时从 kafka 一侧看到的 lag 可能并非完全实时，如果 checkpoint 间隔比较长 lag 曲线可能会是一个锯齿状。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-01-8.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;h5 id=&quot;timestamp-extractionwatermark-生成&quot;&gt;Timestamp Extraction/Watermark 生成&lt;/h5&gt;
+
+&lt;p&gt;Flink 作业内使用 EventTime 属性时，需要指定从消息中提取时戳和生成水位的函数。&lt;/p&gt;
+
+&lt;p&gt;FlinkKakfaConsumer 构造的 source 后直接调用 assignTimestampsAndWatermarks 函数设置水位生成器的好处是此时是每个 partition 一个 watermark assigner&lt;/p&gt;
+
+&lt;p&gt;如下图。source 生成的时戳为多个 partition 时戳对齐后的最小时戳。此时在一个 source 读取多个 partition，并且 partition 之间数据时戳有一定差距的情况下，因为在 source 端 watermark 在 partition 级别有对齐，不会导致数据读取较慢 partition 数据丢失。&lt;/p&gt;
+
+&lt;h4 id=&quot;q--a&quot;&gt;Q &amp;amp; A&lt;/h4&gt;
+
+&lt;p&gt;&lt;strong&gt;在 Flink consumer 的并行度的设置：是对应 topic 的 partitions 个数吗？要是有多个主题数据源，并行度是设置成总体的 partitions 数吗？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;这个并不是绝对的，跟 topic 的数据量也有关，如果数据量不大，也可以设置小于 partitions 个数的并发数。但不要设置并发数大于 partitions 总数，因为这种情况下某些并发因为分配不到 partition 导致没有数据处理。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;如果 checkpoint 时间过长，offset 未提交到 kafka，此时节点宕机了，重启之后的重复消费如何保证呢？&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;首先开启 checkpoint 时 offset 是 Flink 通过状态 state 管理和恢复的，并不是从 kafka 的 offset 位置恢复。在 checkpoint 机制下，作业从最近一次 checkpoint 恢复，本身是会回放部分历史数据，导致部分数据重复消费，Flink 引擎仅保证计算状态的精准一次，要想做到端到端精准一次需要依赖一些幂等的存储系统或者事务操作。&lt;/p&gt;
+
+&lt;hr /&gt;
+&lt;p&gt;参考链接&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://mp.weixin.qq.com/s/p-YKnKnEnLbRfW7dfKxrcw&quot;&gt;如何正确使用 Flink Connector？&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/flink-china/flink-training-course&quot;&gt;Flink 中文视频课程&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.jianshu.com/p/f9d447a3c48f&quot;&gt;Flink Kafka Connector 详解&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://cloud.tencent.com/developer/article/1406134&quot;&gt;Apache-Flink深度解析-DataStream-Connectors之Kafka&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>zemingyan</name></author><summary type="html">生产环境中最常用到的 Flink kafka connector</summary></entry><entry><title type="html">Flink connector</title><link href="http://localhost:4000/2019/09/01/Flink-Connector/" rel="alternate" type="text/html" title="Flink connector" /><published>2019-09-01T00:00:00+00:00</published><updated>2019-09-01T00:00:00+00:00</updated><id>http://localhost:4000/2019/09/01/Flink-Connector</id><content type="html" xml:base="http://localhost:4000/2019/09/01/Flink-Connector/">&lt;p&gt;Connector 的作用就相当于一个连接器，连接 Flink 计算引擎跟外界存储系统。&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h4 id=&quot;前言&quot;&gt;前言&lt;/h4&gt;
+
+&lt;p&gt;Flink 是新一代流批统一的计算引擎，它需要从不同的第三方存储引擎中把数据读过来，进行处理，然后再写出到另外的存储引擎中。Connector 的作用就相当于一个连接器，连接 Flink 计算引擎跟外界存储系统。&lt;/p&gt;
+
+&lt;p&gt;Flink 里有以下几种方式，当然也不限于这几种方式可以跟外界进行数据交换&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Flink 里面预定义了一些 source 和 sink&lt;/li&gt;
+  &lt;li&gt;Flink 内部也提供了一些 Boundled connectors&lt;/li&gt;
+  &lt;li&gt;使用第三方 Apache Bahir 项目中提供的连接器&lt;/li&gt;
+  &lt;li&gt;通过异步 IO 方式&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h4 id=&quot;预定义的-source-和-sink&quot;&gt;预定义的 source 和 sink&lt;/h4&gt;
+
+&lt;p&gt;Flink 里预定义了一部分 source 和 sink。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-01-1.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;基于文件的 source 和 sink&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;如果要从文本文件中读取数据，可以直接使用&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;env.readTextFile(path)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;就可以以文本的形式读取该文件中的内容。当然也可以使用&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;env.readFile(fileInputFormat, path)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;根据指定的 fileInputFormat 格式读取文件中的内容&lt;/p&gt;
+
+&lt;p&gt;如果数据在 Flink 内进行了一系列的计算，想把结果写出到文件里，也可以直接使用内部预定义的一些 sink，
+比如将结果已文本或 csv 格式写出到文件中，可以使用 DataStream 的 writeAsText(path) 和 
+writeAsCsv(path)&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;基于 Socket 的 Source 和 Sink&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;提供 Socket 的 host name 及 port，可以直接用 StreamExecutionEnvironment 预定的接口 
+socketTextStream 创建基于 Socket 的 source，从该 socket 中以文本的形式读取数据。
+当然如果想把结果写出到另外一个 Socket，也可以直接调用 DataStream writeToSocket。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;基于内存 Collections、Iterators 的 Source&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;可以直接基于内存中的集合或者迭代器，调用 StreamExecutionEnvironment fromCollection、fromElements 构建相应的 source。结果数据也可以直接 print、printToError 的方式写出到标准输出或标准错误。&lt;/p&gt;
+
+&lt;p&gt;详细也可以参考 Flink 源码中提供的一些相对应的 Examples 来查看异常预定义 source 和 sink 的使用方法，例如 WordCount、SocketWindowWordCount。&lt;/p&gt;
+
+&lt;h4 id=&quot;bundled-connectors&quot;&gt;Bundled Connectors&lt;/h4&gt;
+
+&lt;p&gt;Flink 里已经提供了一些绑定的 Connector，例如 kafka source 和 sink，Es sink等。读写 kafka、es、rabbitMQ 时可以直接使用相应 connector 的 api 即可。第二部分会详细介绍生产环境中最常用的 kafka connector。&lt;/p&gt;
+
+&lt;p&gt;虽然该部分是 Flink 项目源代码里的一部分，但是真正意义上不算作 Flink 引擎相关逻辑，并且该部分没有打包在二进制的发布包里面。所以在提交 Job 时候需要注意， job 代码 jar 包中一定要将相应的 connetor 相关类打包进去，否则在提交作业时就会失败，提示找不到相应的类，或初始化某些类异常。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-01-2.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;h4 id=&quot;apache-bahir-中的连接器&quot;&gt;Apache Bahir 中的连接器&lt;/h4&gt;
+
+&lt;p&gt;Apache Bahir 最初是从 Apache Spark 中独立出来项目提供，以提供不限于 Spark 相关的扩展/插件、连接器和其他可插入组件的实现。通过提供多样化的流连接器（streaming connectors）和 SQL 数据源扩展分析平台的覆盖面。如有需要写到 flume、redis 的需求的话，可以使用该项目提供的 connector。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-01-3.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;h4 id=&quot;async-io&quot;&gt;Async I/O&lt;/h4&gt;
+
+&lt;p&gt;流计算中经常需要与外部存储系统交互，比如需要关联 MySQL 中的某个表。一般来说，如果用同步 I/O 的方式，会造成系统中出现大的等待时间，影响吞吐和延迟。为了解决这个问题，异步 I/O 可以并发处理多个请求，提高吞吐，减少延迟。&lt;/p&gt;
+
+&lt;p&gt;Async 的原理可参考&lt;a href=&quot;https://ci.apache.org/projects/flink/flink-docs-release-1.3/dev/stream/asyncio.html&quot;&gt;官方文档&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-09-01-4.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;hr /&gt;
+&lt;p&gt;参考链接&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://mp.weixin.qq.com/s/p-YKnKnEnLbRfW7dfKxrcw&quot;&gt;如何正确使用 Flink Connector？&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/flink-china/flink-training-course&quot;&gt;Flink 中文视频课程&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>zemingyan</name></author><summary type="html">Connector 的作用就相当于一个连接器，连接 Flink 计算引擎跟外界存储系统。</summary></entry><entry><title type="html">Linux CPU</title><link href="http://localhost:4000/2019/08/29/Linux-CPU/" rel="alternate" type="text/html" title="Linux CPU" /><published>2019-08-29T00:00:00+00:00</published><updated>2019-08-29T00:00:00+00:00</updated><id>http://localhost:4000/2019/08/29/Linux-CPU</id><content type="html" xml:base="http://localhost:4000/2019/08/29/Linux-CPU/">&lt;p&gt;CPU是用来运行各种程序，做各种计算的，一旦CPU处于高负荷状态，容易引起服务响应速度变慢&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h4 id=&quot;前言&quot;&gt;前言&lt;/h4&gt;
+
+&lt;p&gt;CPU 说简单点，就是我们编写的程序，经过编译后，最终都会变成一条条的指令，由CPU来进行最终的执行。&lt;/p&gt;
+
+&lt;p&gt;CPU是用来运行各种程序，做各种计算的，一旦CPU处于高负荷状态，容易引起服务响应速度变慢，进而导致整个服务不可用，特别是在业务高峰期可能导致雪崩效应，最终整个系统出现瘫痪。&lt;/p&gt;
+
+&lt;h4 id=&quot;特殊名词&quot;&gt;特殊名词&lt;/h4&gt;
+
+&lt;p&gt;&lt;strong&gt;物理CPU&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;grep 'physical id' /proc/cpuinfo | sort -u | wc -l&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;CPU核数&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;grep 'core id' /proc/cpuinfo | sort -u | wc -l&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;逻辑CPU&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;grep 'processor' /proc/cpuinfo | sort -u | wc -l&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;逻辑CPU=物理CPU个数×每颗核数&lt;/p&gt;
+
+&lt;h4 id=&quot;实操&quot;&gt;实操&lt;/h4&gt;
+
+&lt;p&gt;top命令提供了实时的对系统处理器的状态监视。&lt;/p&gt;
+
+&lt;p&gt;具体可以查阅&lt;a href=&quot;https://www.jellythink.com/archives/421&quot;&gt;Linux top命令详解&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;load average&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;第一行的 load average 是系统平均负载， 后面的三个数分别是1分钟、5分钟、15分钟的负载情况&lt;/p&gt;
+
+&lt;p&gt;load average 是平均活跃进程数，平均活跃进程数 = 正在运行的进程 + 准备好等待运行的进程&lt;/p&gt;
+
+&lt;p&gt;如果平均负载值大于0.7 * CPU内核数，就需要引起关注。至于为什么可以阅读&lt;a href=&quot;https://blog.csdn.net/zwldx/article/details/82812704&quot;&gt;Linux系统平均负载3个数字的含义&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;load average与cpu使用率的区别&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;CPU使用率: 单位时间内cpu繁忙情况的统计&lt;/p&gt;
+
+&lt;p&gt;CPU密集型进程，CPU使用率和平均负载基本一致&lt;/p&gt;
+
+&lt;p&gt;IO密集型进程，平均负载升高，CPU使用率不一定升高&lt;/p&gt;
+
+&lt;p&gt;大量等待CPU的进程调度，平均负载升高，CPU使用率也升高&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;进程字段排序&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;默认进入top时，各进程是按照CPU的占用量来排序的。但是，我们可以改变这种排序&lt;br /&gt;
+M 根据驻留内存大小进行排序&lt;br /&gt;
+P 根据CPU使用百分比大小进行排序&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;CPU使用率超过100%&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;有时候使用top命令发现CPU占用率竟超过100%。&lt;/p&gt;
+
+&lt;p&gt;这跟 CPU 数量有关，top命令是按CPU总使用率来显示的，4核理论上最高可达400%&lt;/p&gt;
+
+&lt;p&gt;vmstat 可对操作系统的虚拟内存、进程、CPU活动进行监控。它是对系统的整体情况进行统计，不足之处是无法对某个进程进行深入分析。v&lt;/p&gt;
+
+&lt;p&gt;一般我是用 vmstat 查看当前运行队列中线程的数目，代表线程处于可运行状态，但CPU还未能执行。&lt;/p&gt;
+
+&lt;p&gt;这个值可以作为判断CPU是否繁忙的一个指标；当这个值超过了CPU数目，就会出现CPU瓶颈了&lt;/p&gt;
+
+&lt;p&gt;这个可以结合top命令的负载值同步评估系统性能&lt;/p&gt;
+
+&lt;p&gt;具体使用情况参阅&lt;a href=&quot;https://www.jellythink.com/archives/419&quot;&gt;Linux vmstat命令详解&lt;/a&gt;&lt;/p&gt;
+
+&lt;hr /&gt;
+&lt;p&gt;参考链接&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://blog.csdn.net/guotao15285007494/article/details/84135713&quot;&gt;Linux CPU使用率超过100%的原因&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.cnblogs.com/shengs/p/5148284.html&quot;&gt;性能分析Linux服务器CPU利用率&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>zemingyan</name></author><summary type="html">CPU是用来运行各种程序，做各种计算的，一旦CPU处于高负荷状态，容易引起服务响应速度变慢</summary></entry><entry><title type="html">Linux 网络</title><link href="http://localhost:4000/2019/08/28/Linux-Network/" rel="alternate" type="text/html" title="Linux 网络" /><published>2019-08-28T00:00:00+00:00</published><updated>2019-08-28T00:00:00+00:00</updated><id>http://localhost:4000/2019/08/28/Linux-Network</id><content type="html" xml:base="http://localhost:4000/2019/08/28/Linux-Network/">&lt;p&gt;Linux 网络&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h4 id=&quot;前言&quot;&gt;前言&lt;/h4&gt;
+
+&lt;p&gt;网络的监测是所有Linux子系统里面最复杂的，有太多的因素在里面，比如：延迟、阻塞、冲突、丢包等，更糟的是与Linux主机相连的路由器、交换机、无线信号都会影响到整体网络并且很难判断是因为Linux网络子系统的问题还是别的设备的问题，增加了监测和判断的复杂度。&lt;/p&gt;
+
+&lt;p&gt;网络问题是什么，是不通，还是慢？&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;如果是网络不通，要定位具体的问题，一般是不断尝试排除不可能故障的地方，最终定位问题根源。一般需要查看&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;　　　　是否接入到链路&lt;/p&gt;
+
+&lt;p&gt;　　　　是否启用了相应的网卡&lt;/p&gt;
+
+&lt;p&gt;　　　　本地网络是否连接&lt;/p&gt;
+
+&lt;p&gt;　　　　DNS故障&lt;/p&gt;
+
+&lt;p&gt;　　　　能否路由到目标主机&lt;/p&gt;
+
+&lt;p&gt;　　　　远程端口是否开放&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;如果是网络速度慢，一般有以下几个方式定位问题源：&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;　　　　DNS是否是问题的源头&lt;/p&gt;
+
+&lt;p&gt;　　　　查看路由过程中哪些节点是瓶颈&lt;/p&gt;
+
+&lt;p&gt;　　　　查看带宽的使用情况&lt;/p&gt;
+
+&lt;h4 id=&quot;实操&quot;&gt;实操&lt;/h4&gt;
+
+&lt;h5 id=&quot;是否接入到链路&quot;&gt;是否接入到链路&lt;/h5&gt;
+
+&lt;p&gt;使用 ethtool 查看 em1 的物理连接&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[root@hahaha ~]# ethtool em1
+Settings for em1:
+        Supported ports: [ FIBRE ]
+        Supported link modes:   1000baseT/Full 
+                                10000baseT/Full 
+        Supported pause frame use: No
+        Supports auto-negotiation: Yes
+        Advertised link modes:  1000baseT/Full 
+                                10000baseT/Full 
+        Advertised pause frame use: No
+        Advertised auto-negotiation: Yes
+        Speed: Unknown!
+        Duplex: Unknown! (255)
+        Port: FIBRE
+        PHYAD: 0
+        Transceiver: external
+        Auto-negotiation: on
+        Supports Wake-on: umbg
+        Wake-on: g
+        Current message level: 0x00000007 (7)
+                               drv probe link
+        Link detected: no
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Speed 显示当前网卡的速度。但是不知道为啥，我司机器是Unknown。。&lt;/p&gt;
+
+&lt;h5 id=&quot;是否启用了相应的网卡&quot;&gt;是否启用了相应的网卡&lt;/h5&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;ip addr show&lt;/code&gt; 显示网卡及配置的地址信息&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;1: lo: &amp;lt;LOOPBACK,UP,LOWER_UP&amp;gt; mtu 16436 qdisc noqueue state UNKNOWN 
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+2: eth0: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1500 qdisc pfifo_fast state UP qlen 1000
+    link/ether 06:50:32:00:02:18 brd ff:ff:ff:ff:ff:ff
+    inet 100.73.12.12/24 brd 100.73.12.255 scope global eth0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;首先这个系统有两个接口：lo和eth0，lo是环回接口，而我们重点关注的则是eth0这个普通网络接口&lt;/p&gt;
+
+&lt;p&gt;state UP: 网络接口已启用。具体详细的请阅读&lt;a href=&quot;https://www.jellythink.com/archives/469&quot;&gt;Linux ip命令详解&lt;/a&gt;&lt;/p&gt;
+
+&lt;h5 id=&quot;是否正确设置路由&quot;&gt;是否正确设置路由&lt;/h5&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;route  -n&lt;/code&gt;查看路由状态&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[root@massive-dataset-new-002 ~]# route  -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+100.73.12.0     0.0.0.0         255.255.255.0   U     0      0        0 eth0
+0.0.0.0         100.73.12.254   0.0.0.0         UG    0      0        0 eth0
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;通过route命令查看内核路由，检验具体的网卡是否连接到目标网路的路由，之后就可以尝试ping 网关，排查与网关之间的连接。&lt;/p&gt;
+
+&lt;p&gt;如果无法ping通网关，可能是网关限制了ICMP数据包，或者交换机设置的问题。&lt;/p&gt;
+
+&lt;h5 id=&quot;dns工作状况&quot;&gt;DNS工作状况&lt;/h5&gt;
+
+&lt;p&gt;通常很多网络问题是DNS故障或配置不当造成的&lt;/p&gt;
+
+&lt;p&gt;使用nslookup命令查看DNS解析&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[root@massive-dataset-new-002 ~]# nslookup baidu.com
+Server:         100.73.18.5
+Address:        100.73.18.5#53
+
+Non-authoritative answer:
+Name:   baidu.com
+Address: 39.156.69.79
+Name:   baidu.com
+Address: 220.181.38.148
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;这里的DNS服务器 100.73.18.5 位于当前局域网内，nslookup的结果显示DNS工作正常。&lt;/p&gt;
+
+&lt;p&gt;如果这里nslookup命令无法解析目标域名，则很有可能是DNS配置不当&lt;/p&gt;
+
+&lt;h5 id=&quot;是否可以正常路由到远程主机&quot;&gt;是否可以正常路由到远程主机&lt;/h5&gt;
+
+&lt;p&gt;互谅网是通过大量路由器中继连接起来的，网络的访问就是在这些节点间一跳一跳最终到达目的地，想要查看网络连接，最直接最常用的命令是ping，ping得通，说明路由工作正常，但是如果ping不通，traceroute命令可以查看从当前主机到目标主机的全部“跳”的过程。traceroute和ping命令都是使用ICMP协议包。&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[root@massive-dataset-new-002 ~]#  traceroute www.baidu.com
+traceroute to www.baidu.com (103.235.46.39), 30 hops max, 60 byte packets
+ 1  100.73.12.254 (100.73.12.254)  2.124 ms  2.670 ms  2.388 ms
+ 2  100.73.255.252 (100.73.255.252)  0.107 ms  0.092 ms  0.089 ms
+ 3  114.113.234.233 (114.113.234.233)  7.929 ms  8.298 ms  8.290 ms
+ 4  172.16.0.4 (172.16.0.4)  13.154 ms  14.051 ms  13.626 ms
+ 5  192.168.77.9 (192.168.77.9)  9.923 ms  9.330 ms  9.901 ms
+ 6  61.49.40.97 (61.49.40.97)  2.216 ms  2.319 ms  1.595 ms
+ 7  * * *
+ 8  219.232.11.73 (219.232.11.73)  2.156 ms 219.232.11.153 (219.232.11.153)  3.377 ms 219.232.11.233 (219.232.11.233)  2.410 ms
+ 9  202.96.12.21 (202.96.12.21)  3.088 ms 123.126.0.101 (123.126.0.101)  3.232 ms 125.33.186.85 (125.33.186.85)  3.251 ms
+10  219.158.5.146 (219.158.5.146)  9.310 ms 219.158.4.170 (219.158.4.170)  10.142 ms 219.158.5.158 (219.158.5.158)  8.519 ms
+11  219.158.3.138 (219.158.3.138)  10.748 ms  11.408 ms 219.158.16.66 (219.158.16.66)  8.184 ms
+12  219.158.96.26 (219.158.96.26)  152.988 ms 219.158.98.18 (219.158.98.18)  154.549 ms  154.532 ms
+13  219.158.40.190 (219.158.40.190)  170.641 ms 219.158.33.58 (219.158.33.58)  190.226 ms 219.158.40.190 (219.158.40.190)  170.384 ms
+14  if-ae-8-2.tcore1.sv1-santa-clara.as6453.net (66.110.59.9)  190.528 ms  192.138 ms  189.755 ms
+15  if-ae-0-2.tcore2.sv1-santa-clara.as6453.net (63.243.251.2)  170.883 ms  168.308 ms  168.036 ms
+16  209.58.86.30 (209.58.86.30)  168.931 ms *  192.311 ms
+17  * * *
+18  103.235.45.0 (103.235.45.0)  308.516 ms  329.374 ms  331.152 ms
+19  * * *
+20  * * *
+21  * * *^C
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;traceroute可以查看网络中继在哪里中断或者网络延时情况，“*”是因为网络不通或者某个网关限制了ICMP协议包。&lt;/p&gt;
+
+&lt;h5 id=&quot;远程主机是否开放端口&quot;&gt;远程主机是否开放端口&lt;/h5&gt;
+
+&lt;p&gt;telnet 命令是检查端口开放情况的利器&lt;/p&gt;
+
+&lt;p&gt;telnet IP PORT，可以查看指定远程主机是否开放目标端口&lt;/p&gt;
+
+&lt;p&gt;但是telnet 命令的功能非常有限，当防火墙存在时，就不能很好地显示结果，所以telnet无法连接包含两种可能：1是端口确实没有开放，2是防火墙过滤了连接。&lt;/p&gt;
+
+&lt;h5 id=&quot;本机查看监听端口&quot;&gt;本机查看监听端口&lt;/h5&gt;
+
+&lt;p&gt;如果要在本地查看某个端口是否开放，可以使用如下命令&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;netstat -lnp | grep PORT&lt;/code&gt; 查看本地指定端口的监听情况&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[root@massive-dataset-new-002 ~]# netstat -anlp | grep 13307
+tcp        0      0 0.0.0.0:13307               0.0.0.0:*                   LISTEN      18368/mysqld        
+tcp        0      0 100.73.12.12:13307          100.73.53.250:46370         ESTABLISHED 18368/mysqld        
+tcp        0      0 100.73.12.12:13307          100.73.53.250:51380         ESTABLISHED 18368/mysqld        
+tcp        0      0 100.73.12.12:13307          100.73.53.250:33466         ESTABLISHED 18368/mysqld        
+tcp        0      0 100.73.12.12:13307          100.73.53.250:48615         ESTABLISHED 18368/mysqld        
+tcp        0      0 100.73.12.12:13307          100.73.53.250:44921         ESTABLISHED 18368/mysqld        
+tcp        0      0 100.73.12.12:13307          100.73.53.250:35016         ESTABLISHED 18368/mysqld 
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;其中第一列是套接字通信协议，第2列和第3列显示的是接收和发送队列，第4列是主机监听的本地地址，反映了该套接字监听的网络；第6列显示当前套接字的状态，最后一列显示打开端口的进程。&lt;/p&gt;
+
+&lt;p&gt;查看当前活动端口监听的网络，如果netstat找不到指定的端口，说明没有进程在监听指定端口。&lt;/p&gt;
+
+&lt;h5 id=&quot;网络较慢的排查&quot;&gt;网络较慢的排查&lt;/h5&gt;
+
+&lt;p&gt;iftop命令类似于top命令，查看哪些网络连接占用的带宽较多&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# CentOS上安装所需依赖包
+yum install flex byacc  libpcap ncurses ncurses-devel libpcap-devel
+yum install iftop
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;该命令按照带宽占用高低排序，可以确定那些占用带宽的网络连接&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blog/2019-08-28-2.png&quot; alt=&quot;&quot; height=&quot;80%&quot; width=&quot;80%&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;最上方的一行刻度是整个网络的带宽比例，下面第1列是源IP，第2列是目标IP，箭头表示了二者之间是否在传输数据，以及传输的方向。最后三列分别是2s、10s、40s时两个主机之间的数据传输速率。&lt;/p&gt;
+
+&lt;p&gt;最下方的TX、RX分别代表发送、接收数据的统计，TOTAL则是数据传输总量。&lt;/p&gt;
+
+&lt;p&gt;使用 -n 选项直接显示连接的IP，否则看到的则是解析成域名后的结果。&lt;br /&gt;
+-i 选项可以指定要查看的网卡，默认情况下，iftop会显示自己找到的第一个网卡 &lt;br /&gt;
+在进入iftop的非交互界面后，按 p 键可以打开或关闭显示端口，按 s 键可以显示或隐藏源主机，而按 d 键则可以显示或隐藏目标主机。&lt;/p&gt;
+
+&lt;p&gt;虽然iftop报告每个连接所使用的带宽，但它无法报告参与某个套按字连接的进程名称/编号（ID）。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;tcpdump&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;当一切排查手段都无济于事时仍然不能找到网络速度慢、丢包严重等原因时，往往祭出杀手锏——抓包。抓包的最佳手段是在通信的双方同时抓取，这样可以同时检验发出的数据包和收到的数据包，tcpdump是常用的抓包工具。&lt;/p&gt;
+
+&lt;p&gt;具体自行查阅&lt;a href=&quot;https://www.jellythink.com/archives/478&quot;&gt;Linux tcpdump命令详解&lt;/a&gt;&lt;/p&gt;
+
+&lt;hr /&gt;
+&lt;p&gt;参考链接&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.cnblogs.com/Security-Darren/p/4700387.html&quot;&gt;Linux系统排查4——网络篇&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>zemingyan</name></author><summary type="html">Linux 网络</summary></entry><entry><title type="html">Linux 内存</title><link href="http://localhost:4000/2019/08/28/Linux-Memory/" rel="alternate" type="text/html" title="Linux 内存" /><published>2019-08-28T00:00:00+00:00</published><updated>2019-08-28T00:00:00+00:00</updated><id>http://localhost:4000/2019/08/28/Linux-Memory</id><content type="html" xml:base="http://localhost:4000/2019/08/28/Linux-Memory/">&lt;p&gt;内存是评判服务器的一个非常重要的指标。内存的多少，可能会直接影响着服务器的整体性能。&lt;/p&gt;
+
+&lt;hr /&gt;
+
+&lt;h4 id=&quot;前言&quot;&gt;前言&lt;/h4&gt;
+
+&lt;p&gt;内存是评判服务器的一个非常重要的指标。内存的多少，可能会直接影响着服务器的整体性能。阅读&lt;a href=&quot;https://www.jellythink.com/archives/462&quot;&gt;Linux性能监测：内存篇&lt;/a&gt;&lt;/p&gt;
+
+&lt;h4 id=&quot;实操&quot;&gt;实操&lt;/h4&gt;
+
+&lt;p&gt;free命令可以显示Linux系统中空闲的、已用的物理内存及swap内存，及被内核使用的buffer。&lt;/p&gt;
+
+&lt;p&gt;free命令习惯上有以下几种形式&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;free -k # 以KB为单位显示内存使用情况
+free -m # 以MB为单位显示内存使用情况
+free -g # 以GB为单位显示内存使用情况
+free -h # 以人类友好的方式显示内存使用情况
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;输入free -m时，系统就会输出以下内容&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[root@massive-dataset-new-002 ~]# free -g
+             total       used       free     shared    buffers     cached
+Mem:            61         19         41          0          0         10
+-/+ buffers/cache:          8         52
+Swap:            4          0          4
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;输出解释&lt;br /&gt;
+total: 内存总数，物理内存总数&lt;br /&gt;
+used: 已经使用的内存数&lt;br /&gt;
+free: 空闲的内存数&lt;br /&gt;
+shared: 多个进程共享的内存总额&lt;br /&gt;
+buffers: 缓冲内存数&lt;br /&gt;
+cached: 缓存内存数&lt;br /&gt;
+- buffers/cached: 应用使用内存数&lt;br /&gt;
++ buffers/cached: 应用可用内存数&lt;br /&gt;
+Swap: 交换分区，虚拟内存&lt;/p&gt;
+
+&lt;p&gt;通过free命令查看机器空闲内存时，会发现free的值很小。&lt;br /&gt;
+这主要是因为，在Linux系统中有这么一种思想，内存不用白不用，因此它尽可能的cache和buffer一些数据，以方便下次使用。
+但实际上这些内存也是可以立刻拿来使用的。&lt;/p&gt;
+
+&lt;p&gt;buffers: 作为 buffer cache 的内存，用来缓存磁盘数据。&lt;/p&gt;
+
+&lt;p&gt;cached: 作为 page cache 的内存, 用来缓存文件数据。&lt;/p&gt;
+
+&lt;p&gt;如果 cache 的值很大，说明cache住的文件数很多。如果频繁访问到的文件都能被cache住，那么磁盘的读IO 必会非常小&lt;/p&gt;
+
+&lt;p&gt;在使用free命令时，都是需要重点关注 &lt;code class=&quot;highlighter-rouge&quot;&gt;- buffers/cached&lt;/code&gt;和 + &lt;code class=&quot;highlighter-rouge&quot;&gt;buffers/cached&lt;/code&gt;。&lt;/p&gt;
+
+&lt;p&gt;- buffers/cached，即used - buffers/cached，表示应用程序实际使用的内存  &lt;br /&gt;
++ buffers/cached，即free + buffers/cached，表示理论上都可以被使用的内存&lt;/p&gt;
+
+&lt;p&gt;可见-buffers/cache反映的是被程序实实在在吃掉的内存，而+buffers/cache反映的是可以挪用的内存总数。&lt;/p&gt;</content><author><name>zemingyan</name></author><summary type="html">内存是评判服务器的一个非常重要的指标。内存的多少，可能会直接影响着服务器的整体性能。</summary></entry></feed>

@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-cmn-Hans" prefix="og: http://ogp.me/ns#" class="han-init">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>kafka offset 机制 &mdash; ubuntu咸鱼</title>
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-css/css/primer.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-markdown/dist/user-content.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/octicons/octicons/octicons.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/collection.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/repo-card.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/mini-repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/boxed-group.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/common.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/share.js/dist/css/share.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/responsive.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/posts/index.css">
+    <!-- Latest compiled and minified CSS -->
+    
+
+    
+    <link rel="canonical" href="http://localhost:4000/2019/08/18/Kafka-offset/">
+    <link rel="alternate" type="application/atom+xml" title="ubuntu咸鱼" href="http://localhost:4000/feed.xml">
+    <link rel="shortcut icon" href="http://localhost:4000/favicon.ico">
+    
+    <meta property="og:title" content="kafka offset 机制">
+      
+    <meta name="keywords" content="kafka">
+    <meta name="og:keywords" content="kafka">
+      
+    <meta name="description" content="kafka offset 机制">
+    <meta name="og:description" content="kafka offset 机制">
+      
+    
+    
+        
+    
+    <meta property="og:url" content="http://localhost:4000/2019/08/18/Kafka-offset/">
+    <meta property="og:site_name" content="ubuntu咸鱼">
+    <meta property="og:type" content="article">
+    <meta property="og:locale" content="zh_CN" />
+    
+    <meta property="article:published_time" content="2019-08-18">
+    
+    <script src="http://localhost:4000/assets/vendor/jquery/dist/jquery.min.js"></script>
+    <script src="http://localhost:4000/assets/js/jquery-ui.js"></script>
+    <script type="text/javascript">
+    function toggleMenu() {
+        var nav = document.getElementsByClassName("site-header-nav")[0];
+        if (nav.style.display == "inline-flex") {
+          nav.style.display = "none";
+        } else {
+          nav.style.display = "inline-flex";
+        }
+    }
+    </script>
+</head>
+<body class="" data-mz="">
+    <header class="site-header">
+        <div class="container">
+            <h1><a href="http://localhost:4000/" title="ubuntu咸鱼"><span class="octicon octicon-mark-github"></span> ubuntu咸鱼</a></h1>
+            <button class="collapsed mobile-visible" type="button" onclick="toggleMenu();">
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+            </button>
+            <nav class="site-header-nav" role="navigation">
+                
+                <a href="http://localhost:4000/" class=" site-header-nav-item" target="" title="Home">Home</a>
+                
+                <a href="http://localhost:4000/categories/" class=" site-header-nav-item" target="" title="Blog">Blog</a>
+                
+                <a href="http://localhost:4000/open-source/" class=" site-header-nav-item" target="" title="Open-source">Open-source</a>
+                
+                <a href="http://localhost:4000/wiki/" class=" site-header-nav-item" target="" title="Wiki">Wiki</a>
+                
+                <a href="http://localhost:4000/links/" class=" site-header-nav-item" target="" title="Link">Link</a>
+                
+                <a href="http://localhost:4000/about/" class=" site-header-nav-item" target="" title="About">About</a>
+                
+            </nav>
+        </div>
+    </header>
+    <!-- / header -->
+
+
+    <section class="collection-head small geopattern" data-pattern-id="kafka offset 机制">
+<div class="container">
+  <div class="columns">
+    <div class="column three-fourths">
+      <div class="collection-title">
+        <h1 class="collection-header">kafka offset 机制</h1>
+        <div class="collection-info">
+          
+          <span class="meta-info">
+            <span class="octicon octicon-calendar"></span> 2019/08/18
+          </span>
+          
+          
+          <span class="meta-info">
+            <span class="octicon octicon-file-directory"></span>
+            <a href="http://localhost:4000/categories/#Kafka" title="Kafka">Kafka</a>
+          </span>
+          
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+<!-- / .banner -->
+<section class="container content">
+<div class="columns">
+  <div class="column three-fourths" >
+    <article class="article-content markdown-body">
+    <p>kafka offset 机制</p>
+
+<hr />
+
+<h4 id="概念">概念</h4>
+
+<p>什么是 offset？</p>
+
+<p>offset 是 consumer position，Topic 的每个 Partition 都有各自的 offset</p>
+
+<p>消费者需要自己保留一个 offset，从 kafka 获取消息时，只拉去当前 offset 以后的消息</p>
+
+<p>Kafka 的 scala/java 版的 client 已经实现了这部分的逻辑</p>
+
+<p>之前 offset 保存到 zookeeper 上，broker 存放 offset 是 kafka 从 0.9 版本开始，提供的新的消费方式
+原因是zookeeper来存放，还是有许多弊端，不方便灵活控制，效率不高</p>
+
+<h4 id="offset-记录位置">offset 记录位置</h4>
+
+<p>kafka 消费者在会保存其消费的进度，也就是offset，存储的位置根据选用的 kafka api 不同而不同。具体可以参看
+<a href="https://blog.csdn.net/u013063153/article/details/78122088">kafka 消费者offset记录位置和方式</a></p>
+
+<h4 id="offset-更新方式">offset 更新方式</h4>
+
+<ul>
+  <li>
+    <p>自动提交，设置 enable.auto.commit=true，更新的频率根据参数【auto.commit.interval.ms】来定。这种方式也被称为【at most once】，
+fetch 到消息后就可以更新offset，无论是否消费成功</p>
+  </li>
+  <li>
+    <p>手动提交，设置 enable.auto.commit=false，这种方式称为【at least once】。fetc h到消息后，等消费完成再调用方法【consumer.commitSync()】，
+手动更新offset；如果消费失败，则 offset 也不会更新，此条消息会被重复消费一次</p>
+  </li>
+</ul>
+
+<p>Kafka 提供 hight-level API 基本帮我们封装好管理和持久化 offset 了。所以不需要怎么管 offset。</p>
+
+<p>Kafka默认实现了at least once语义</p>
+
+<hr />
+<p>参考链接</p>
+<ul>
+  <li><a href="https://blog.csdn.net/u012129558/article/details/80075270">Kafka的offset管理</a></li>
+  <li><a href="https://blog.csdn.net/u013063153/article/details/78122088">kafka 消费者offset记录位置和方式</a></li>
+  <li><a href="https://blog.csdn.net/camel84/article/details/82433075">kafka系列-进阶篇之消息和offset存储</a></li>
+  <li><a href="https://www.cnblogs.com/FG123/p/10091599.html">Kafka提交offset机制</a></li>
+</ul>
+
+
+    </article>
+    <div class="share">
+      <div class="share-component"></div>
+    </div>
+    <div class="comment">
+      
+
+  
+
+  
+        <div id="gitalk-container"></div>
+        <link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css">
+        <script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+        <script>
+        var gitalk = new Gitalk({
+            id: '/2019/08/18/Kafka-offset/',
+            clientID: 'e171e4ef3d8128b9ad4c',
+            clientSecret: '8965fddcd7cfe0ba4bfb49550e23850dea558db3',
+            repo: 'zemingyan.github.io',
+            owner: 'zemingyan',
+            admin: ['zemingyan'],
+            labels: ['gitment'],
+            perPage: 50,
+        })
+        gitalk.render('gitalk-container')
+        </script>
+  
+
+
+    </div>
+  </div>
+  <div class="column one-fourth">
+    
+<h3>Search</h3>
+<div id="site_search">
+    <input type="text" id="search_box" placeholder="Search">
+</div>
+
+<ul id="search_results"></ul>
+
+<link rel="stylesheet" type="text/css" href="http://localhost:4000/assets/css/modules/sidebar-search.css">
+<script src="http://localhost:4000/assets/js/jekyll-search.min.js"></script>
+<script src="http://localhost:4000/assets/js/search.js"></script>
+
+<script type="text/javascript">
+SimpleJekyllSearch({
+    searchInput: document.getElementById('search_box'),
+    resultsContainer: document.getElementById('search_results'),
+    json: 'http://localhost:4000/assets/search_data.json',
+    searchResultTemplate: '<li><a href="{url}" title="{desc}">{title}</a></li>',
+    noResultsText: 'No results found',
+    limit: 10,
+    fuzzy: false,
+    exclude: ['Welcome']
+})
+</script>
+
+    
+
+    
+<h3 class="post-directory-title mobile-hidden">Table of Contents</h3>
+<div id="post-directory-module" class="mobile-hidden">
+  <section class="post-directory">
+  <!-- Links that trigger the jumping -->
+  <!-- Added by javascript below -->
+  <dl></dl>
+  </section>
+</div>
+
+<script src="http://localhost:4000/assets/js/jquery.toc.js"></script>
+
+  </div>
+</div>
+</section>
+<!-- /section.content -->
+
+    <footer class="container">
+        <div class="site-footer" role="contentinfo">
+            <div class="copyright left mobile-block">
+                    © 2018
+                    <span title="zemingyan">zemingyan</span>
+                    <a href="javascript:window.scrollTo(0,0)" class="right mobile-visible">TOP</a>
+            </div>
+
+            <ul class="site-footer-links right mobile-hidden">
+                <li>
+                    <a href="javascript:window.scrollTo(0,0)" >TOP</a>
+                </li>
+            </ul>
+            <a href="http://github.com/zemingyan/zemingyan.github.io" target="_blank" aria-label="view source code">
+                <span class="mega-octicon octicon-mark-github" title="GitHub"></span>
+            </a>
+            <ul class="site-footer-links mobile-hidden">
+                
+                <li>
+                    <a href="http://localhost:4000/" title="Home" target="">Home</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/categories/" title="Blog" target="">Blog</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/open-source/" title="Open-source" target="">Open-source</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/wiki/" title="Wiki" target="">Wiki</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/links/" title="Link" target="">Link</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/about/" title="About" target="">About</a>
+                </li>
+                
+                <li><a href="http://localhost:4000/feed.xml"><span class="octicon octicon-rss" style="color:orange;"></span></a></li>
+            </ul>
+
+        </div>
+    </footer>
+    <!-- / footer -->
+    <script src="http://localhost:4000/assets/vendor/share.js/dist/js/share.min.js"></script>
+    <script src="http://localhost:4000/assets/js/geopattern.js"></script>
+    <script src="http://localhost:4000/assets/js/prism.js"></script>
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/prism.css">
+    <script>
+      jQuery(document).ready(function($) {
+        // geopattern
+        $('.geopattern').each(function(){
+          $(this).geopattern($(this).data('pattern-id'));
+        });
+       // hljs.initHighlightingOnLoad();
+      });
+    </script>
+
+    
+
+    
+
+    
+
+    
+
+    
+    <div style="display:none">
+      <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-148378051-1', 'auto');
+        ga('send', 'pageview');
+
+      </script>
+    </div>
+    
+</body>
+</html>
+

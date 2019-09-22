@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-cmn-Hans" prefix="og: http://ogp.me/ns#" class="han-init">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>HDFS checkpoint &mdash; ubuntu咸鱼</title>
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-css/css/primer.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-markdown/dist/user-content.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/octicons/octicons/octicons.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/collection.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/repo-card.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/mini-repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/boxed-group.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/common.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/share.js/dist/css/share.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/responsive.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/posts/index.css">
+    <!-- Latest compiled and minified CSS -->
+    
+
+    
+    <link rel="canonical" href="http://localhost:4000/2019/09/20/HDFS-HA-checkpoint/">
+    <link rel="alternate" type="application/atom+xml" title="ubuntu咸鱼" href="http://localhost:4000/feed.xml">
+    <link rel="shortcut icon" href="http://localhost:4000/favicon.ico">
+    
+    <meta property="og:title" content="HDFS checkpoint">
+      
+    <meta name="keywords" content="HDFS">
+    <meta name="og:keywords" content="HDFS">
+      
+    <meta name="description" content="Hadoop 2.0 HA 的 checkpoint 过程">
+    <meta name="og:description" content="Hadoop 2.0 HA 的 checkpoint 过程">
+      
+    
+    
+        
+    
+    <meta property="og:url" content="http://localhost:4000/2019/09/20/HDFS-HA-checkpoint/">
+    <meta property="og:site_name" content="ubuntu咸鱼">
+    <meta property="og:type" content="article">
+    <meta property="og:locale" content="zh_CN" />
+    
+    <meta property="article:published_time" content="2019-09-20">
+    
+    <script src="http://localhost:4000/assets/vendor/jquery/dist/jquery.min.js"></script>
+    <script src="http://localhost:4000/assets/js/jquery-ui.js"></script>
+    <script type="text/javascript">
+    function toggleMenu() {
+        var nav = document.getElementsByClassName("site-header-nav")[0];
+        if (nav.style.display == "inline-flex") {
+          nav.style.display = "none";
+        } else {
+          nav.style.display = "inline-flex";
+        }
+    }
+    </script>
+</head>
+<body class="" data-mz="">
+    <header class="site-header">
+        <div class="container">
+            <h1><a href="http://localhost:4000/" title="ubuntu咸鱼"><span class="octicon octicon-mark-github"></span> ubuntu咸鱼</a></h1>
+            <button class="collapsed mobile-visible" type="button" onclick="toggleMenu();">
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+            </button>
+            <nav class="site-header-nav" role="navigation">
+                
+                <a href="http://localhost:4000/" class=" site-header-nav-item" target="" title="Home">Home</a>
+                
+                <a href="http://localhost:4000/categories/" class=" site-header-nav-item" target="" title="Blog">Blog</a>
+                
+                <a href="http://localhost:4000/open-source/" class=" site-header-nav-item" target="" title="Open-source">Open-source</a>
+                
+                <a href="http://localhost:4000/wiki/" class=" site-header-nav-item" target="" title="Wiki">Wiki</a>
+                
+                <a href="http://localhost:4000/links/" class=" site-header-nav-item" target="" title="Link">Link</a>
+                
+                <a href="http://localhost:4000/about/" class=" site-header-nav-item" target="" title="About">About</a>
+                
+            </nav>
+        </div>
+    </header>
+    <!-- / header -->
+
+
+    <section class="collection-head small geopattern" data-pattern-id="HDFS checkpoint">
+<div class="container">
+  <div class="columns">
+    <div class="column three-fourths">
+      <div class="collection-title">
+        <h1 class="collection-header">HDFS checkpoint</h1>
+        <div class="collection-info">
+          
+          <span class="meta-info">
+            <span class="octicon octicon-calendar"></span> 2019/09/20
+          </span>
+          
+          
+          <span class="meta-info">
+            <span class="octicon octicon-file-directory"></span>
+            <a href="http://localhost:4000/categories/#HDFS" title="HDFS">HDFS</a>
+          </span>
+          
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+<!-- / .banner -->
+<section class="container content">
+<div class="columns">
+  <div class="column three-fourths" >
+    <article class="article-content markdown-body">
+    <p>Hadoop 2.0 HA 的 checkpoint 过程</p>
+
+<hr />
+
+<h4 id="前言">前言</h4>
+
+<p>HDFS 将文件系统的元数据信息存放在 fsimage 和一系列的 edits 文件中。</p>
+
+<p>在启动 HDFS 集群时，系统会先加载 fsimage，然后逐个执行所有Edits文件中的每一条操作，来获取完整的文件系统元数据。</p>
+
+<h4 id="文件">文件</h4>
+
+<p>HDFS 的存储元数据是由 fsimage 和 edits 文件组成。fsimage 存放上次 checkpoint 生成的文件系统元数据，edits 存放文件系统操作日志。checkpoint的过程，就是合并 fsimage 和 edits 文件，然后生成最新的 fsimage 的过程。</p>
+
+<p>fsimage文件: fsimage 里保存的是 HDFS 文件系统的元数据信息。每次 checkpoint 的时候生成一个新的 fsimage 文件，fsimage 文件同步保存在 active namenode 上和 standby namenode 上。是在 standby namenode 上生成并上传到 active namenode 上的。</p>
+
+<p>edits文件: active namenode 会及时把 HDFS 的修改信息（创建，修改，删除等）写入到本地目录，和 journalnode 上的 edits 文件，每一个操作以一条数据的形式存放。edits文件默认每2分钟产生一个。正在写入的Edits文件以 edits_inprogress_* 格式存在。</p>
+
+<p><img src="/images/blog/2019-09-20-1.png" alt="" height="80%" width="80%" /></p>
+
+<h4 id="checkpoint-过程">checkpoint 过程</h4>
+
+<p>开启HA的HDFS，有 active 和 standby namenode 两个 namenode 节点。他们的内存中保存了一样的集群元数据信息。</p>
+
+<p>因为 standby namenode 已经将集群状态存储在内存中了，所以创建检查点checkpoint的过程只需要从内存中生成新的fsimage。</p>
+
+<p>这里standby namenode称为SbNN，activenamenode称为ANN</p>
+
+<ol>
+  <li>SbNN查看是否满足创建检查点的条件
+    <ul>
+      <li>距离上次checkpoint的时间间隔 &gt;= ${dfs.namenode.checkpoint.period}</li>
+      <li>edits中的事务条数达到 ${dfs.namenode.checkpoint.txns} 限制</li>
+    </ul>
+  </li>
+  <li>
+    <p>SbNN将内存中当前的状态保存成一个新的文件，命名为fsimage.ckpt_txid。其中txid是最后一个edit中的最后一条事务的ID（transaction ID）。然后为该fsimage文件创建一个MD5文件，并将fsimage文件重命名为fsimage_txid。</p>
+  </li>
+  <li>
+    <p>SbNN向ANN发送一条HTTP GET请求。请求中包含了SbNN的域名，端口以及新fsimage的txid。</p>
+  </li>
+  <li>ANN收到请求后，用获取到的信息反过来向SbNN再发送一条HTTP GET请求，获取新的fsimage文件。这个新的fsimage文件传输到ANN上后，也是先命名为fsimage.ckpt_txid，并为它创建一个MD5文件。然后再改名为fsimage_txid。fsimage过程完成。</li>
+</ol>
+
+<h4 id="checkpoint-相关配置">checkpoint 相关配置</h4>
+
+<p><strong>dfs.namenode.checkpoint.period</strong></p>
+
+<p>两次检查点创建之间的固定时间间隔，默认3600，即1小时</p>
+
+<p><strong>dfs.namenode.checkpoint.txns</strong></p>
+
+<p>未检查的事务数量。若没检查事务数达到这个值，也触发一次checkpoint，1,000,000</p>
+
+<p><strong>dfs.namenode.checkpoint.check.period</strong></p>
+
+<p>standby namenode检查是否满足建立checkpoint的条件的检查周期。默认60，即每1min检查一次</p>
+
+<p><strong>dfs.namenode.num.checkpoints.retained</strong></p>
+
+<p>在namenode上保存的fsimage的数目，超出的会被删除。默认保存2个</p>
+
+<p><strong>dfs.namenode.num.checkpoints.retained</strong></p>
+
+<p>最多能保存的edits文件个数，默认为1,000,000. 官方解释是为防止standby namenode宕机导致edits文件堆积的情况，设置的限制</p>
+
+<p><strong>dfs.ha.tail-edits.period</strong></p>
+
+<p>standby namenode每隔多长时间去检测新的Edits文件。只检测完成了的Edits， 不检测inprogress的文件。(不是很明白)</p>
+
+<hr />
+<p>参考链接</p>
+<ul>
+  <li><a href="https://blog.cloudera.com/a-guide-to-checkpointing-in-hadoop/">A Guide to Checkpointing in Hadoop</a></li>
+  <li><a href="https://blog.csdn.net/Amber_amber/article/details/47003589">Hadoop2.0 HA的checkpoint过程</a></li>
+</ul>
+
+
+    </article>
+    <div class="share">
+      <div class="share-component"></div>
+    </div>
+    <div class="comment">
+      
+
+  
+
+  
+        <div id="gitalk-container"></div>
+        <link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css">
+        <script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+        <script>
+        var gitalk = new Gitalk({
+            id: '/2019/09/20/HDFS-HA-checkpoint/',
+            clientID: 'e171e4ef3d8128b9ad4c',
+            clientSecret: '8965fddcd7cfe0ba4bfb49550e23850dea558db3',
+            repo: 'zemingyan.github.io',
+            owner: 'zemingyan',
+            admin: ['zemingyan'],
+            labels: ['gitment'],
+            perPage: 50,
+        })
+        gitalk.render('gitalk-container')
+        </script>
+  
+
+
+    </div>
+  </div>
+  <div class="column one-fourth">
+    
+<h3>Search</h3>
+<div id="site_search">
+    <input type="text" id="search_box" placeholder="Search">
+</div>
+
+<ul id="search_results"></ul>
+
+<link rel="stylesheet" type="text/css" href="http://localhost:4000/assets/css/modules/sidebar-search.css">
+<script src="http://localhost:4000/assets/js/jekyll-search.min.js"></script>
+<script src="http://localhost:4000/assets/js/search.js"></script>
+
+<script type="text/javascript">
+SimpleJekyllSearch({
+    searchInput: document.getElementById('search_box'),
+    resultsContainer: document.getElementById('search_results'),
+    json: 'http://localhost:4000/assets/search_data.json',
+    searchResultTemplate: '<li><a href="{url}" title="{desc}">{title}</a></li>',
+    noResultsText: 'No results found',
+    limit: 10,
+    fuzzy: false,
+    exclude: ['Welcome']
+})
+</script>
+
+    
+
+    
+<h3 class="post-directory-title mobile-hidden">Table of Contents</h3>
+<div id="post-directory-module" class="mobile-hidden">
+  <section class="post-directory">
+  <!-- Links that trigger the jumping -->
+  <!-- Added by javascript below -->
+  <dl></dl>
+  </section>
+</div>
+
+<script src="http://localhost:4000/assets/js/jquery.toc.js"></script>
+
+  </div>
+</div>
+</section>
+<!-- /section.content -->
+
+    <footer class="container">
+        <div class="site-footer" role="contentinfo">
+            <div class="copyright left mobile-block">
+                    © 2018
+                    <span title="zemingyan">zemingyan</span>
+                    <a href="javascript:window.scrollTo(0,0)" class="right mobile-visible">TOP</a>
+            </div>
+
+            <ul class="site-footer-links right mobile-hidden">
+                <li>
+                    <a href="javascript:window.scrollTo(0,0)" >TOP</a>
+                </li>
+            </ul>
+            <a href="http://github.com/zemingyan/zemingyan.github.io" target="_blank" aria-label="view source code">
+                <span class="mega-octicon octicon-mark-github" title="GitHub"></span>
+            </a>
+            <ul class="site-footer-links mobile-hidden">
+                
+                <li>
+                    <a href="http://localhost:4000/" title="Home" target="">Home</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/categories/" title="Blog" target="">Blog</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/open-source/" title="Open-source" target="">Open-source</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/wiki/" title="Wiki" target="">Wiki</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/links/" title="Link" target="">Link</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/about/" title="About" target="">About</a>
+                </li>
+                
+                <li><a href="http://localhost:4000/feed.xml"><span class="octicon octicon-rss" style="color:orange;"></span></a></li>
+            </ul>
+
+        </div>
+    </footer>
+    <!-- / footer -->
+    <script src="http://localhost:4000/assets/vendor/share.js/dist/js/share.min.js"></script>
+    <script src="http://localhost:4000/assets/js/geopattern.js"></script>
+    <script src="http://localhost:4000/assets/js/prism.js"></script>
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/prism.css">
+    <script>
+      jQuery(document).ready(function($) {
+        // geopattern
+        $('.geopattern').each(function(){
+          $(this).geopattern($(this).data('pattern-id'));
+        });
+       // hljs.initHighlightingOnLoad();
+      });
+    </script>
+
+    
+
+    
+
+    
+
+    
+
+    
+    <div style="display:none">
+      <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-148378051-1', 'auto');
+        ga('send', 'pageview');
+
+      </script>
+    </div>
+    
+</body>
+</html>
+

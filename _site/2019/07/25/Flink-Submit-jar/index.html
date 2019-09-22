@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-cmn-Hans" prefix="og: http://ogp.me/ns#" class="han-init">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>Flink 作业提交方式 &mdash; ubuntu咸鱼</title>
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-css/css/primer.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-markdown/dist/user-content.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/octicons/octicons/octicons.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/collection.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/repo-card.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/mini-repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/boxed-group.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/common.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/share.js/dist/css/share.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/responsive.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/posts/index.css">
+    <!-- Latest compiled and minified CSS -->
+    
+
+    
+    <link rel="canonical" href="http://localhost:4000/2019/07/25/Flink-Submit-jar/">
+    <link rel="alternate" type="application/atom+xml" title="ubuntu咸鱼" href="http://localhost:4000/feed.xml">
+    <link rel="shortcut icon" href="http://localhost:4000/favicon.ico">
+    
+    <meta property="og:title" content="Flink 作业提交方式">
+      
+    <meta name="keywords" content="Flink">
+    <meta name="og:keywords" content="Flink">
+      
+    <meta name="description" content="Flink 作业提交方式">
+    <meta name="og:description" content="Flink 作业提交方式">
+      
+    
+    
+        
+    
+    <meta property="og:url" content="http://localhost:4000/2019/07/25/Flink-Submit-jar/">
+    <meta property="og:site_name" content="ubuntu咸鱼">
+    <meta property="og:type" content="article">
+    <meta property="og:locale" content="zh_CN" />
+    
+    <meta property="article:published_time" content="2019-07-25">
+    
+    <script src="http://localhost:4000/assets/vendor/jquery/dist/jquery.min.js"></script>
+    <script src="http://localhost:4000/assets/js/jquery-ui.js"></script>
+    <script type="text/javascript">
+    function toggleMenu() {
+        var nav = document.getElementsByClassName("site-header-nav")[0];
+        if (nav.style.display == "inline-flex") {
+          nav.style.display = "none";
+        } else {
+          nav.style.display = "inline-flex";
+        }
+    }
+    </script>
+</head>
+<body class="" data-mz="">
+    <header class="site-header">
+        <div class="container">
+            <h1><a href="http://localhost:4000/" title="ubuntu咸鱼"><span class="octicon octicon-mark-github"></span> ubuntu咸鱼</a></h1>
+            <button class="collapsed mobile-visible" type="button" onclick="toggleMenu();">
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+            </button>
+            <nav class="site-header-nav" role="navigation">
+                
+                <a href="http://localhost:4000/" class=" site-header-nav-item" target="" title="Home">Home</a>
+                
+                <a href="http://localhost:4000/categories/" class=" site-header-nav-item" target="" title="Blog">Blog</a>
+                
+                <a href="http://localhost:4000/open-source/" class=" site-header-nav-item" target="" title="Open-source">Open-source</a>
+                
+                <a href="http://localhost:4000/wiki/" class=" site-header-nav-item" target="" title="Wiki">Wiki</a>
+                
+                <a href="http://localhost:4000/links/" class=" site-header-nav-item" target="" title="Link">Link</a>
+                
+                <a href="http://localhost:4000/about/" class=" site-header-nav-item" target="" title="About">About</a>
+                
+            </nav>
+        </div>
+    </header>
+    <!-- / header -->
+
+
+    <section class="collection-head small geopattern" data-pattern-id="Flink 作业提交方式">
+<div class="container">
+  <div class="columns">
+    <div class="column three-fourths">
+      <div class="collection-title">
+        <h1 class="collection-header">Flink 作业提交方式</h1>
+        <div class="collection-info">
+          
+          <span class="meta-info">
+            <span class="octicon octicon-calendar"></span> 2019/07/25
+          </span>
+          
+          
+          <span class="meta-info">
+            <span class="octicon octicon-file-directory"></span>
+            <a href="http://localhost:4000/categories/#Flink" title="Flink">Flink</a>
+          </span>
+          
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+<!-- / .banner -->
+<section class="container content">
+<div class="columns">
+  <div class="column three-fourths" >
+    <article class="article-content markdown-body">
+    <p>Flink 作业提交方式</p>
+
+<hr />
+
+<h4 id="前言">前言</h4>
+
+<p>写了 Flink 代码之后，肯定得想着提交到集群上小跑一下，不然总觉得少了点什么。</p>
+
+<h4 id="yarn">Yarn</h4>
+
+<p>在 Yarn 上提交作业分为2种情况:</p>
+<ul>
+  <li>yarn seesion</li>
+  <li>Flink run</li>
+</ul>
+
+<p>两者者对于现有大数据平台资源使用率有着很大的区别：</p>
+
+<p>yarn seesion(Start a long-running Flink cluster on YARN) 这种方式需要先启动集群，然后在提交作业。</p>
+
+<p>第二种 Flink run 直接在 YARN 上提交运行 Flink作业(Run a Flink job on YARN)，这种方式的好处是一个任务会对应一个job, 即没提交一个作业会根据自身的情况，向 yarn 申请资源，直到作业执行完成，并不会影响下一个作业的正常运行，除非是yarn上面没有任何资源的情况下。</p>
+
+<h5 id="yarn-seesion">yarn seesion</h5>
+
+<p>不管采用客户端模式还是分离模式，提交作业都是一样的。</p>
+
+<p>下面以 Flink 目录下的 LICENSE 为例，计算 WordCount 将处理后的数据放到 HDFS。</p>
+
+<p><strong>数据准备</strong></p>
+
+<p>首先上传数据到 HDFS</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>hadoop fs -mkdir   /user/root/test
+hadoop fs -put LICENSE /user/root/test
+</code></pre></div></div>
+
+<p><strong>提交作业并查看结果</strong></p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>./bin/flink run ./examples/batch/WordCount.jar  --input hdfs://nameservice1/user/root/test/LICENSE  --output hdfs://nameservice1/user/root/test/result.txt
+hadoop fs -cat /user/root/test/result.txt
+</code></pre></div></div>
+
+<p>对于Flink on yarn 作业提交后，若要在 Flink WEB UI上查看作业的，到完成 Job 里可以看到</p>
+
+<p><img src="/images/blog/2019-07-25-8.png" alt="" height="80%" width="80%" /></p>
+
+<p>查看作业的详细</p>
+
+<p><img src="/images/blog/2019-07-25-9.png" alt="" height="80%" width="80%" /></p>
+
+<p><strong>运行到指定的 yarn session</strong></p>
+
+<p>指定 yarn applicationID 来运行到特定的 yarn session</p>
+
+<p>可以指定yid -yid,–yarnapplicationId <arg> Attach to running YARN session来运行到特定的yarn session</arg></p>
+
+<p>指定运行到 ID 为 application_1550579025929_62420 的yarn-session</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>./bin/flink run -yid application_1550579025929_62420 ./examples/batch/WordCount.jar --input hdfs://nameservice1/user/root/test/LICENSE  --output hdfs://nameservice1/user/root/test/result4.txt
+</code></pre></div></div>
+
+<h5 id="run-方式">run 方式</h5>
+
+<p>对于前面介绍的 yarn session 需要先启动一个集群，然后在提交作业。</p>
+
+<p>对于Flink run 直接提交作业就相对比较简单，不需要额外的去启动一个集群，直接提交作业，即可完成 Flink 作业。</p>
+
+<p>同样支持两种提交方式，默认不指定就是客户端方式</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code># 客户端会多出来一个CliFrontend进程，就是驱动进程, 会在终端打印执行信息
+bin/flink run -m yarn-cluster -yn 2 -yjm 2048 -ytm 5120 ./examples/batch/WordCount.jar  --input hdfs://nameservice1/user/root/test/LICENSE  --output hdfs://nameservice1/user/root/test/result4.txt
+</code></pre></div></div>
+
+<p>需要使用分离方式提交的话。可以在提交作业的命令行中指定 -d 或者 –detached 进行分离提交。程序提交完毕退出客户端，</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code># 程序提交完毕退出客户端，不在打印作业进度等信息！
+bin/flink run -m yarn-cluster -d -yn 2 -yjm 2048 -ytm 5120 ./examples/batch/WordCount.jar  --input hdfs://nameservice1/user/root/test/LICENSE  --output hdfs://nameservice1/user/root/test/result4.txt
+</code></pre></div></div>
+
+<p>通过<code class="highlighter-rouge">bin/flink run -help</code>命令获取帮助。这里将不在解释</p>
+
+<p>有时候 Yarn 集群是 jdk1.7 的，但是 Flink 得 1.8以上，这时需要在启动命令中指定 jdk1.8</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>bin/flink run -m yarn-cluster -yn 2 -yjm 2048 -ytm 5120 \
+-yD yarn.taskmanager.env.JAVA_HOME=/usr/java/jdk1.8.0_172-amd64 \
+-yD containerized.master.env.JAVA_HOME=/usr/java/jdk1.8.0_172-amd64 \
+-yD containerized.taskmanager.env.JAVA_HOME=/usr/java/jdk1.8.0_172-amd64 \
+-c cn.lihm.examples.streaming.KafkaLogHandle \
+/root/lihm/flink-learning-examples-1.0-SNAPSHOT.jar 
+</code></pre></div></div>
+
+<h4 id="总结">总结</h4>
+
+<p>顺道提一下 slots 数的指定:</p>
+
+<p>对于 standalone cluster 而言，由于一台机器上只有一个TaskManager，slots数应与机器核数相同。</p>
+
+<p>对于 single job on yarn模式和 yarn cluster 模式而言，一台机器上可能有多个TaskManager（取决于yarn在该机器上分配的container数），理论上应该与该Container分配的核数一致为佳。</p>
+
+<p>注意事项: 如果是平时的本地测试或者开发，可以采用yarn seesion, 如果是生产环境推荐使用 run 方式</p>
+
+<hr />
+<p>参考链接</p>
+<ul>
+  <li><a href="https://blog.csdn.net/xianpanjia4616/article/details/83958673">Flink on yarn集群搭建</a></li>
+  <li><a href="https://mp.weixin.qq.com/s/VCmeuzz-euCmu9ojZJ3uaA">Flink on yarn应用部署</a></li>
+  <li><a href="https://www.jianshu.com/p/1b05202c4fb6">Flink on yarn部署模式</a></li>
+  <li><a href="https://blog.csdn.net/lb812913059/article/details/86601150">Flink安装与运行——flink on yarn</a></li>
+</ul>
+
+    </article>
+    <div class="share">
+      <div class="share-component"></div>
+    </div>
+    <div class="comment">
+      
+
+  
+
+  
+        <div id="gitalk-container"></div>
+        <link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css">
+        <script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+        <script>
+        var gitalk = new Gitalk({
+            id: '/2019/07/25/Flink-Submit-jar/',
+            clientID: 'e171e4ef3d8128b9ad4c',
+            clientSecret: '8965fddcd7cfe0ba4bfb49550e23850dea558db3',
+            repo: 'zemingyan.github.io',
+            owner: 'zemingyan',
+            admin: ['zemingyan'],
+            labels: ['gitment'],
+            perPage: 50,
+        })
+        gitalk.render('gitalk-container')
+        </script>
+  
+
+
+    </div>
+  </div>
+  <div class="column one-fourth">
+    
+<h3>Search</h3>
+<div id="site_search">
+    <input type="text" id="search_box" placeholder="Search">
+</div>
+
+<ul id="search_results"></ul>
+
+<link rel="stylesheet" type="text/css" href="http://localhost:4000/assets/css/modules/sidebar-search.css">
+<script src="http://localhost:4000/assets/js/jekyll-search.min.js"></script>
+<script src="http://localhost:4000/assets/js/search.js"></script>
+
+<script type="text/javascript">
+SimpleJekyllSearch({
+    searchInput: document.getElementById('search_box'),
+    resultsContainer: document.getElementById('search_results'),
+    json: 'http://localhost:4000/assets/search_data.json',
+    searchResultTemplate: '<li><a href="{url}" title="{desc}">{title}</a></li>',
+    noResultsText: 'No results found',
+    limit: 10,
+    fuzzy: false,
+    exclude: ['Welcome']
+})
+</script>
+
+    
+
+    
+<h3 class="post-directory-title mobile-hidden">Table of Contents</h3>
+<div id="post-directory-module" class="mobile-hidden">
+  <section class="post-directory">
+  <!-- Links that trigger the jumping -->
+  <!-- Added by javascript below -->
+  <dl></dl>
+  </section>
+</div>
+
+<script src="http://localhost:4000/assets/js/jquery.toc.js"></script>
+
+  </div>
+</div>
+</section>
+<!-- /section.content -->
+
+    <footer class="container">
+        <div class="site-footer" role="contentinfo">
+            <div class="copyright left mobile-block">
+                    © 2018
+                    <span title="zemingyan">zemingyan</span>
+                    <a href="javascript:window.scrollTo(0,0)" class="right mobile-visible">TOP</a>
+            </div>
+
+            <ul class="site-footer-links right mobile-hidden">
+                <li>
+                    <a href="javascript:window.scrollTo(0,0)" >TOP</a>
+                </li>
+            </ul>
+            <a href="http://github.com/zemingyan/zemingyan.github.io" target="_blank" aria-label="view source code">
+                <span class="mega-octicon octicon-mark-github" title="GitHub"></span>
+            </a>
+            <ul class="site-footer-links mobile-hidden">
+                
+                <li>
+                    <a href="http://localhost:4000/" title="Home" target="">Home</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/categories/" title="Blog" target="">Blog</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/open-source/" title="Open-source" target="">Open-source</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/wiki/" title="Wiki" target="">Wiki</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/links/" title="Link" target="">Link</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/about/" title="About" target="">About</a>
+                </li>
+                
+                <li><a href="http://localhost:4000/feed.xml"><span class="octicon octicon-rss" style="color:orange;"></span></a></li>
+            </ul>
+
+        </div>
+    </footer>
+    <!-- / footer -->
+    <script src="http://localhost:4000/assets/vendor/share.js/dist/js/share.min.js"></script>
+    <script src="http://localhost:4000/assets/js/geopattern.js"></script>
+    <script src="http://localhost:4000/assets/js/prism.js"></script>
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/prism.css">
+    <script>
+      jQuery(document).ready(function($) {
+        // geopattern
+        $('.geopattern').each(function(){
+          $(this).geopattern($(this).data('pattern-id'));
+        });
+       // hljs.initHighlightingOnLoad();
+      });
+    </script>
+
+    
+
+    
+
+    
+
+    
+
+    
+    <div style="display:none">
+      <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-148378051-1', 'auto');
+        ga('send', 'pageview');
+
+      </script>
+    </div>
+    
+</body>
+</html>
+

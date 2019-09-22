@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-cmn-Hans" prefix="og: http://ogp.me/ns#" class="han-init">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>HMaster 定期清理 archive &mdash; ubuntu咸鱼</title>
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-css/css/primer.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-markdown/dist/user-content.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/octicons/octicons/octicons.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/collection.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/repo-card.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/mini-repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/boxed-group.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/common.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/share.js/dist/css/share.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/responsive.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/posts/index.css">
+    <!-- Latest compiled and minified CSS -->
+    
+
+    
+    <link rel="canonical" href="http://localhost:4000/2019/09/16/HMaster-clean-archive/">
+    <link rel="alternate" type="application/atom+xml" title="ubuntu咸鱼" href="http://localhost:4000/feed.xml">
+    <link rel="shortcut icon" href="http://localhost:4000/favicon.ico">
+    
+    <meta property="og:title" content="HMaster 定期清理 archive">
+      
+    <meta name="keywords" content="HBase">
+    <meta name="og:keywords" content="HBase">
+      
+    <meta name="description" content="HFileCleaner 定期清理 archive 下的文件">
+    <meta name="og:description" content="HFileCleaner 定期清理 archive 下的文件">
+      
+    
+    
+        
+    
+    <meta property="og:url" content="http://localhost:4000/2019/09/16/HMaster-clean-archive/">
+    <meta property="og:site_name" content="ubuntu咸鱼">
+    <meta property="og:type" content="article">
+    <meta property="og:locale" content="zh_CN" />
+    
+    <meta property="article:published_time" content="2019-09-16">
+    
+    <script src="http://localhost:4000/assets/vendor/jquery/dist/jquery.min.js"></script>
+    <script src="http://localhost:4000/assets/js/jquery-ui.js"></script>
+    <script type="text/javascript">
+    function toggleMenu() {
+        var nav = document.getElementsByClassName("site-header-nav")[0];
+        if (nav.style.display == "inline-flex") {
+          nav.style.display = "none";
+        } else {
+          nav.style.display = "inline-flex";
+        }
+    }
+    </script>
+</head>
+<body class="" data-mz="">
+    <header class="site-header">
+        <div class="container">
+            <h1><a href="http://localhost:4000/" title="ubuntu咸鱼"><span class="octicon octicon-mark-github"></span> ubuntu咸鱼</a></h1>
+            <button class="collapsed mobile-visible" type="button" onclick="toggleMenu();">
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+            </button>
+            <nav class="site-header-nav" role="navigation">
+                
+                <a href="http://localhost:4000/" class=" site-header-nav-item" target="" title="Home">Home</a>
+                
+                <a href="http://localhost:4000/categories/" class=" site-header-nav-item" target="" title="Blog">Blog</a>
+                
+                <a href="http://localhost:4000/open-source/" class=" site-header-nav-item" target="" title="Open-source">Open-source</a>
+                
+                <a href="http://localhost:4000/wiki/" class=" site-header-nav-item" target="" title="Wiki">Wiki</a>
+                
+                <a href="http://localhost:4000/links/" class=" site-header-nav-item" target="" title="Link">Link</a>
+                
+                <a href="http://localhost:4000/about/" class=" site-header-nav-item" target="" title="About">About</a>
+                
+            </nav>
+        </div>
+    </header>
+    <!-- / header -->
+
+
+    <section class="collection-head small geopattern" data-pattern-id="HMaster 定期清理 ar">
+<div class="container">
+  <div class="columns">
+    <div class="column three-fourths">
+      <div class="collection-title">
+        <h1 class="collection-header">HMaster 定期清理 archive</h1>
+        <div class="collection-info">
+          
+          <span class="meta-info">
+            <span class="octicon octicon-calendar"></span> 2019/09/16
+          </span>
+          
+          
+          <span class="meta-info">
+            <span class="octicon octicon-file-directory"></span>
+            <a href="http://localhost:4000/categories/#HBase" title="HBase">HBase</a>
+          </span>
+          
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+<!-- / .banner -->
+<section class="container content">
+<div class="columns">
+  <div class="column three-fourths" >
+    <article class="article-content markdown-body">
+    <p>HFileCleaner 定期清理 archive 下的文件</p>
+
+<hr />
+
+<h4 id="前言">前言</h4>
+
+<p>表一旦删除，刚开始是可以在 archive 中看到删除表的数据文件，但是等待一段时间后 archive 中的数据就会被彻底删除，再也无法找回。</p>
+
+<p>这是因为 master 上会启动一个定期清理 archive 中垃圾文件的线程（HFileCleaner），定期会对这些被删除的垃圾文件进行清理。</p>
+
+<h4 id="分析">分析</h4>
+
+<p>定时清理任务的插件设置会从 hbase.master.hfilecleaner.plugins 配置里加载所有 BaseHFileCleanerDelegate。 只有所有 delegate 都同意才能被删除。</p>
+
+<p><img src="/images/blog/2019-09-17-1.png" alt="" height="80%" width="80%" /></p>
+
+<p>就是通过 HFileLinkCleaner，SnapshotHFileCleaner，TimeToLiveHFileCleaner 这三种规则的约束来清理archive中的数据</p>
+
+<h5 id="hfilelinkcleaner">HFileLinkCleaner</h5>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>/**
+ * HFileLink cleaner that determines if a hfile should be deleted.
+ * HFiles can be deleted only if there're no links to them.
+ *
+ * When a HFileLink is created a back reference file is created in:
+ *      /hbase/archive/table/region/cf/.links-hfile/ref-region.ref-table
+ * To check if the hfile can be deleted the back references folder must be empty.
+ */
+</code></pre></div></div>
+
+<p>如果对archive中的文件的引用不存在了，则可以删除</p>
+
+<p>问题: /hbase/archive/table/region/cf/.links-hfile/ref-region.ref-table 从何而来？
+回答: HBase 做 clone_snapshot 的时候。有兴趣可以自看<a href="http://hbasefly.com/2017/09/17/hbase-snapshot/">HBase原理 – 分布式系统中snapshot是怎么玩的？</a></p>
+
+<h5 id="snapshothfilecleaner">SnapshotHFileCleaner</h5>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>/**
+ * Implementation of a file cleaner that checks if a hfile is still used by snapshots of HBase
+ * tables.
+ */
+</code></pre></div></div>
+
+<p>未被 snapshots 引用的文件，可以删除</p>
+
+<p>问题: snapshot 为嘛会引用到 archive 中的文件？
+回答: 表做了snapshot后，此时该表的元数据以及相关的link文件都存储在snapshot中, 该表发生 compact 操作前会将原始表移动到 archive 目录下再执行 compact。对于表删除操作，正常情况也会将删除表数据移动到archive目录下），这样snapshot对应的元数据就不会失去意义，只不过原始数据不再存在于数据目录下，而是移动到了archive目录下。</p>
+
+<h5 id="timetolivehfilecleaner">TimeToLiveHFileCleaner</h5>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>/**
+ * HFile cleaner that uses the timestamp of the hfile to determine if it should be deleted. By
+ * default they are allowed to live for {@value #DEFAULT_TTL}
+ */
+</code></pre></div></div>
+
+<p>默认清理时间超过5分钟的HFile</p>
+
+<h4 id="实战">实战</h4>
+
+<p>在查看公司 HBase 集群 archive 文件夹发现有 2018 年的数据未清理。。。</p>
+
+<p>按所学知识正常的情况下超过5分钟的HFile就会被清理。</p>
+
+<p>继续翻阅文件发现了 links-hfile 文件。因此推断是因为有 clone 的表还依赖着。</p>
+
+<p>links-hfile 文件的消失是在 clone 表做 Compact 之后会消失。但是因为 clone 表已经一直没有写入，所以 region 没有做 majorCompat, 后台线程周期性检查也会因为 needsCompaction() 方法去判断没有足够多的文件触发了 Compaction</p>
+
+<p>只能手动触发 majorCompact，一旦手动触发，HBase 会不做很多自动化检查，直接执行合并。</p>
+
+<p>等待一段时间回看发现 archive 文件的2018年数据已清理</p>
+
+<p>整个过程忘记留图了。。。导致只能后续口诉加回忆。</p>
+
+<hr />
+<p>参考链接</p>
+<ul>
+  <li><a href="https://www.jianshu.com/p/f82aafd7b381">HMaster 功能之定期清理archive</a></li>
+</ul>
+
+
+    </article>
+    <div class="share">
+      <div class="share-component"></div>
+    </div>
+    <div class="comment">
+      
+
+  
+
+  
+        <div id="gitalk-container"></div>
+        <link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css">
+        <script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+        <script>
+        var gitalk = new Gitalk({
+            id: '/2019/09/16/HMaster-clean-archive/',
+            clientID: 'e171e4ef3d8128b9ad4c',
+            clientSecret: '8965fddcd7cfe0ba4bfb49550e23850dea558db3',
+            repo: 'zemingyan.github.io',
+            owner: 'zemingyan',
+            admin: ['zemingyan'],
+            labels: ['gitment'],
+            perPage: 50,
+        })
+        gitalk.render('gitalk-container')
+        </script>
+  
+
+
+    </div>
+  </div>
+  <div class="column one-fourth">
+    
+<h3>Search</h3>
+<div id="site_search">
+    <input type="text" id="search_box" placeholder="Search">
+</div>
+
+<ul id="search_results"></ul>
+
+<link rel="stylesheet" type="text/css" href="http://localhost:4000/assets/css/modules/sidebar-search.css">
+<script src="http://localhost:4000/assets/js/jekyll-search.min.js"></script>
+<script src="http://localhost:4000/assets/js/search.js"></script>
+
+<script type="text/javascript">
+SimpleJekyllSearch({
+    searchInput: document.getElementById('search_box'),
+    resultsContainer: document.getElementById('search_results'),
+    json: 'http://localhost:4000/assets/search_data.json',
+    searchResultTemplate: '<li><a href="{url}" title="{desc}">{title}</a></li>',
+    noResultsText: 'No results found',
+    limit: 10,
+    fuzzy: false,
+    exclude: ['Welcome']
+})
+</script>
+
+    
+
+    
+<h3 class="post-directory-title mobile-hidden">Table of Contents</h3>
+<div id="post-directory-module" class="mobile-hidden">
+  <section class="post-directory">
+  <!-- Links that trigger the jumping -->
+  <!-- Added by javascript below -->
+  <dl></dl>
+  </section>
+</div>
+
+<script src="http://localhost:4000/assets/js/jquery.toc.js"></script>
+
+  </div>
+</div>
+</section>
+<!-- /section.content -->
+
+    <footer class="container">
+        <div class="site-footer" role="contentinfo">
+            <div class="copyright left mobile-block">
+                    © 2018
+                    <span title="zemingyan">zemingyan</span>
+                    <a href="javascript:window.scrollTo(0,0)" class="right mobile-visible">TOP</a>
+            </div>
+
+            <ul class="site-footer-links right mobile-hidden">
+                <li>
+                    <a href="javascript:window.scrollTo(0,0)" >TOP</a>
+                </li>
+            </ul>
+            <a href="http://github.com/zemingyan/zemingyan.github.io" target="_blank" aria-label="view source code">
+                <span class="mega-octicon octicon-mark-github" title="GitHub"></span>
+            </a>
+            <ul class="site-footer-links mobile-hidden">
+                
+                <li>
+                    <a href="http://localhost:4000/" title="Home" target="">Home</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/categories/" title="Blog" target="">Blog</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/open-source/" title="Open-source" target="">Open-source</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/wiki/" title="Wiki" target="">Wiki</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/links/" title="Link" target="">Link</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/about/" title="About" target="">About</a>
+                </li>
+                
+                <li><a href="http://localhost:4000/feed.xml"><span class="octicon octicon-rss" style="color:orange;"></span></a></li>
+            </ul>
+
+        </div>
+    </footer>
+    <!-- / footer -->
+    <script src="http://localhost:4000/assets/vendor/share.js/dist/js/share.min.js"></script>
+    <script src="http://localhost:4000/assets/js/geopattern.js"></script>
+    <script src="http://localhost:4000/assets/js/prism.js"></script>
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/prism.css">
+    <script>
+      jQuery(document).ready(function($) {
+        // geopattern
+        $('.geopattern').each(function(){
+          $(this).geopattern($(this).data('pattern-id'));
+        });
+       // hljs.initHighlightingOnLoad();
+      });
+    </script>
+
+    
+
+    
+
+    
+
+    
+
+    
+    <div style="display:none">
+      <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-148378051-1', 'auto');
+        ga('send', 'pageview');
+
+      </script>
+    </div>
+    
+</body>
+</html>
+

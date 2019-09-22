@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-cmn-Hans" prefix="og: http://ogp.me/ns#" class="han-init">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>Impala 操作 Kudu 表报错影响使用 &mdash; ubuntu咸鱼</title>
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-css/css/primer.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-markdown/dist/user-content.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/octicons/octicons/octicons.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/collection.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/repo-card.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/mini-repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/boxed-group.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/common.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/share.js/dist/css/share.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/responsive.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/posts/index.css">
+    <!-- Latest compiled and minified CSS -->
+    
+
+    
+    <link rel="canonical" href="http://localhost:4000/2019/07/24/Impala-Kudu-FATAL_UNAUTHORIZED/">
+    <link rel="alternate" type="application/atom+xml" title="ubuntu咸鱼" href="http://localhost:4000/feed.xml">
+    <link rel="shortcut icon" href="http://localhost:4000/favicon.ico">
+    
+    <meta property="og:title" content="Impala 操作 Kudu 表报错影响使用">
+      
+    <meta name="keywords" content="Impala, Kudu">
+    <meta name="og:keywords" content="Impala, Kudu">
+      
+    <meta name="description" content="Impala 操作 Kudu 表报 Not authorized: unencrypted connections from publicly routable IPs are prohibited.">
+    <meta name="og:description" content="Impala 操作 Kudu 表报 Not authorized: unencrypted connections from publicly routable IPs are prohibited.">
+      
+    
+    
+        
+    
+    <meta property="og:url" content="http://localhost:4000/2019/07/24/Impala-Kudu-FATAL_UNAUTHORIZED/">
+    <meta property="og:site_name" content="ubuntu咸鱼">
+    <meta property="og:type" content="article">
+    <meta property="og:locale" content="zh_CN" />
+    
+    <meta property="article:published_time" content="2019-07-24">
+    
+    <script src="http://localhost:4000/assets/vendor/jquery/dist/jquery.min.js"></script>
+    <script src="http://localhost:4000/assets/js/jquery-ui.js"></script>
+    <script type="text/javascript">
+    function toggleMenu() {
+        var nav = document.getElementsByClassName("site-header-nav")[0];
+        if (nav.style.display == "inline-flex") {
+          nav.style.display = "none";
+        } else {
+          nav.style.display = "inline-flex";
+        }
+    }
+    </script>
+</head>
+<body class="" data-mz="">
+    <header class="site-header">
+        <div class="container">
+            <h1><a href="http://localhost:4000/" title="ubuntu咸鱼"><span class="octicon octicon-mark-github"></span> ubuntu咸鱼</a></h1>
+            <button class="collapsed mobile-visible" type="button" onclick="toggleMenu();">
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+            </button>
+            <nav class="site-header-nav" role="navigation">
+                
+                <a href="http://localhost:4000/" class=" site-header-nav-item" target="" title="Home">Home</a>
+                
+                <a href="http://localhost:4000/categories/" class=" site-header-nav-item" target="" title="Blog">Blog</a>
+                
+                <a href="http://localhost:4000/open-source/" class=" site-header-nav-item" target="" title="Open-source">Open-source</a>
+                
+                <a href="http://localhost:4000/wiki/" class=" site-header-nav-item" target="" title="Wiki">Wiki</a>
+                
+                <a href="http://localhost:4000/links/" class=" site-header-nav-item" target="" title="Link">Link</a>
+                
+                <a href="http://localhost:4000/about/" class=" site-header-nav-item" target="" title="About">About</a>
+                
+            </nav>
+        </div>
+    </header>
+    <!-- / header -->
+
+
+    <section class="collection-head small geopattern" data-pattern-id="Impala 操作 Kudu ">
+<div class="container">
+  <div class="columns">
+    <div class="column three-fourths">
+      <div class="collection-title">
+        <h1 class="collection-header">Impala 操作 Kudu 表报错影响使用</h1>
+        <div class="collection-info">
+          
+          <span class="meta-info">
+            <span class="octicon octicon-calendar"></span> 2019/07/24
+          </span>
+          
+          
+          <span class="meta-info">
+            <span class="octicon octicon-file-directory"></span>
+            <a href="http://localhost:4000/categories/#Impala" title="Impala">Impala</a>
+          </span>
+          
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+<!-- / .banner -->
+<section class="container content">
+<div class="columns">
+  <div class="column three-fourths" >
+    <article class="article-content markdown-body">
+    <p>Impala 操作 Kudu 表报 Not authorized: unencrypted connections from publicly routable IPs are prohibited.</p>
+
+<hr />
+
+<h4 id="前言">前言</h4>
+
+<p>又到晚饭点时间。一如以往的在去吃晚饭的路上，此时企业微信弹窗闪了一下。</p>
+
+<p>数据平台部的同事说他们内部的 CDH 集群 Impala 操作 Kudu 表报错了，寻求解决帮助。</p>
+
+<p>那还能说，吃饭的速度都快了很多，就为了早点回来解决。</p>
+
+<h4 id="问题解决">问题解决</h4>
+
+<p>问题现场，执行 SQL 复现报错。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>WARNINGS: TransmitData() to 100.106.38.12:27000 failed: Not authorized: Client connection negotiation failed: client connection to 100.106.38.12:27000: FATAL_UNAUTHORIZED: Not authorized: unencrypted connections from publicly routable IPs are prohibited. See --trusted_subnets flag for more information.: 100.106.40.23:32811
+</code></pre></div></div>
+
+<p><img src="/images/blog/2019-07-24-2.png" alt="" height="80%" width="80%" /></p>
+
+<p>定眼一看，这种报错没见过，翻译过来就是<code class="highlighter-rouge">致命的未授权：未授权：禁止来自公共可路由IP的未加密连接。</code></p>
+
+<p>没见过这种报错信息。看来只能寻求搜索引擎了。某度搜索没有找到想要的，还是谷歌给力，直接找到 cloudera 问题帖子。</p>
+
+<p><a href="https://community.cloudera.com/t5/Interactive-Short-cycle-SQL/KUDU-trusted-subnets-does-not-work/td-p/69176">KUDU trusted subnets does not work </a></p>
+
+<p>问题相似度极高。而且还是已经解决的帖子。看来有成功的希望啊。</p>
+
+<p><img src="/images/blog/2019-07-24-3.png" alt="" height="80%" width="80%" /></p>
+
+<p>翻译过来就是 <code class="highlighter-rouge">Impala已经从5.15开始将krpc用于transmitdata（）rpc。因此，您也需要在IMPALA配置中以相同的方式配置“trusted_subnets”标志（它不会从kudu配置中获取）。</code></p>
+
+<p>这套集群是 CHD 6.1.0 的，看来很可能符合这个问题，且也说了是不会从 Kudu 配置中获取 trusted_subnets 标志。</p>
+
+<p>这里就有个问题了。trusted_subnets 是啥？ 碰巧的是原提问者也在问题中说到这个</p>
+
+<p><img src="/images/blog/2019-07-24-8.png" alt="" height="80%" width="80%" /></p>
+
+<p>我也不是很清楚，但是感觉这个很关键，去 Impala 配置和 Kudu 配置搜索了下这个关键字。</p>
+
+<p>只在 Kudu 中搜索到了，Impala 未找到这个，也符合原文说过 IMPALA 需要以相同的方式配置</p>
+
+<p><img src="/images/blog/2019-07-24-4.png" alt="" height="80%" width="80%" /></p>
+
+<p>这时候脑海中有个困惑，trusted_subnets 在 Impala 中怎么配置呢？</p>
+
+<p>我对比了下 Kudu 的配置位置，Kudu 是在代码段位置配置，我猜测 Impala 应该也是在这配置。</p>
+
+<p>在 Impala 配置中搜索<code class="highlighter-rouge">代码块</code>出现好几个地方可以添加。</p>
+
+<p>这时候我只能凭经验猜测 <code class="highlighter-rouge">Impala 命令行参数高级配置代码段</code>和<code class="highlighter-rouge">Impala 服务环境高级配置代码段</code>可能性大，不太可能是其他服务。</p>
+
+<p>抱着试一试心态在这两个地方添加下方配置。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>--trusted_subnets=0.0.0.0/0
+--rpc-authentication=disabled
+--rpc-encryption=disabled
+</code></pre></div></div>
+
+<p>保存时CM报<code class="highlighter-rouge">Impala 服务环境高级配置代码段</code>配置错误</p>
+
+<p><img src="/images/blog/2019-07-24-6.png" alt="" height="80%" width="80%" /></p>
+
+<p>看来只能先去掉，去掉后没有报错。</p>
+
+<p><img src="/images/blog/2019-07-24-5.png" alt="" height="80%" width="80%" /></p>
+
+<p>重启 Impala 后再执行发现问题解决。</p>
+
+<p><img src="/images/blog/2019-07-24-7.png" alt="" height="80%" width="80%" /></p>
+
+<h4 id="总结">总结</h4>
+
+<p>谷歌大法好啊，感谢前人栽树，后人乘凉，没有他们的，我也不能把问题解决。</p>
+
+<p>这里中的为什么，我就没过多研究了，因为本人对 Kudu 了解不多，暂时放着。</p>
+
+<hr />
+<p>参考链接</p>
+<ul>
+  <li><a href="https://community.cloudera.com/t5/Interactive-Short-cycle-SQL/KUDU-trusted-subnets-does-not-work/td-p/69176"> KUDU trusted subnets does not work </a></li>
+</ul>
+
+
+    </article>
+    <div class="share">
+      <div class="share-component"></div>
+    </div>
+    <div class="comment">
+      
+
+  
+
+  
+        <div id="gitalk-container"></div>
+        <link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css">
+        <script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+        <script>
+        var gitalk = new Gitalk({
+            id: '/2019/07/24/Impala-Kudu-FATAL_UNAUTHORIZED/',
+            clientID: 'e171e4ef3d8128b9ad4c',
+            clientSecret: '8965fddcd7cfe0ba4bfb49550e23850dea558db3',
+            repo: 'zemingyan.github.io',
+            owner: 'zemingyan',
+            admin: ['zemingyan'],
+            labels: ['gitment'],
+            perPage: 50,
+        })
+        gitalk.render('gitalk-container')
+        </script>
+  
+
+
+    </div>
+  </div>
+  <div class="column one-fourth">
+    
+<h3>Search</h3>
+<div id="site_search">
+    <input type="text" id="search_box" placeholder="Search">
+</div>
+
+<ul id="search_results"></ul>
+
+<link rel="stylesheet" type="text/css" href="http://localhost:4000/assets/css/modules/sidebar-search.css">
+<script src="http://localhost:4000/assets/js/jekyll-search.min.js"></script>
+<script src="http://localhost:4000/assets/js/search.js"></script>
+
+<script type="text/javascript">
+SimpleJekyllSearch({
+    searchInput: document.getElementById('search_box'),
+    resultsContainer: document.getElementById('search_results'),
+    json: 'http://localhost:4000/assets/search_data.json',
+    searchResultTemplate: '<li><a href="{url}" title="{desc}">{title}</a></li>',
+    noResultsText: 'No results found',
+    limit: 10,
+    fuzzy: false,
+    exclude: ['Welcome']
+})
+</script>
+
+    
+
+    
+<h3 class="post-directory-title mobile-hidden">Table of Contents</h3>
+<div id="post-directory-module" class="mobile-hidden">
+  <section class="post-directory">
+  <!-- Links that trigger the jumping -->
+  <!-- Added by javascript below -->
+  <dl></dl>
+  </section>
+</div>
+
+<script src="http://localhost:4000/assets/js/jquery.toc.js"></script>
+
+  </div>
+</div>
+</section>
+<!-- /section.content -->
+
+    <footer class="container">
+        <div class="site-footer" role="contentinfo">
+            <div class="copyright left mobile-block">
+                    © 2018
+                    <span title="zemingyan">zemingyan</span>
+                    <a href="javascript:window.scrollTo(0,0)" class="right mobile-visible">TOP</a>
+            </div>
+
+            <ul class="site-footer-links right mobile-hidden">
+                <li>
+                    <a href="javascript:window.scrollTo(0,0)" >TOP</a>
+                </li>
+            </ul>
+            <a href="http://github.com/zemingyan/zemingyan.github.io" target="_blank" aria-label="view source code">
+                <span class="mega-octicon octicon-mark-github" title="GitHub"></span>
+            </a>
+            <ul class="site-footer-links mobile-hidden">
+                
+                <li>
+                    <a href="http://localhost:4000/" title="Home" target="">Home</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/categories/" title="Blog" target="">Blog</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/open-source/" title="Open-source" target="">Open-source</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/wiki/" title="Wiki" target="">Wiki</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/links/" title="Link" target="">Link</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/about/" title="About" target="">About</a>
+                </li>
+                
+                <li><a href="http://localhost:4000/feed.xml"><span class="octicon octicon-rss" style="color:orange;"></span></a></li>
+            </ul>
+
+        </div>
+    </footer>
+    <!-- / footer -->
+    <script src="http://localhost:4000/assets/vendor/share.js/dist/js/share.min.js"></script>
+    <script src="http://localhost:4000/assets/js/geopattern.js"></script>
+    <script src="http://localhost:4000/assets/js/prism.js"></script>
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/prism.css">
+    <script>
+      jQuery(document).ready(function($) {
+        // geopattern
+        $('.geopattern').each(function(){
+          $(this).geopattern($(this).data('pattern-id'));
+        });
+       // hljs.initHighlightingOnLoad();
+      });
+    </script>
+
+    
+
+    
+
+    
+
+    
+
+    
+    <div style="display:none">
+      <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-148378051-1', 'auto');
+        ga('send', 'pageview');
+
+      </script>
+    </div>
+    
+</body>
+</html>
+

@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-cmn-Hans" prefix="og: http://ogp.me/ns#" class="han-init">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>HBase 误删表恢复 &mdash; ubuntu咸鱼</title>
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-css/css/primer.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/primer-markdown/dist/user-content.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/octicons/octicons/octicons.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/collection.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/repo-card.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/sections/mini-repo-list.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/components/boxed-group.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/common.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/vendor/share.js/dist/css/share.min.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/responsive.css">
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/posts/index.css">
+    <!-- Latest compiled and minified CSS -->
+    
+
+    
+    <link rel="canonical" href="http://localhost:4000/2019/09/17/HBase-wrong-deletion-table/">
+    <link rel="alternate" type="application/atom+xml" title="ubuntu咸鱼" href="http://localhost:4000/feed.xml">
+    <link rel="shortcut icon" href="http://localhost:4000/favicon.ico">
+    
+    <meta property="og:title" content="HBase 误删表恢复">
+      
+    <meta name="keywords" content="HBase">
+    <meta name="og:keywords" content="HBase">
+      
+    <meta name="description" content="HBase 误删表">
+    <meta name="og:description" content="HBase 误删表">
+      
+    
+    
+        
+    
+    <meta property="og:url" content="http://localhost:4000/2019/09/17/HBase-wrong-deletion-table/">
+    <meta property="og:site_name" content="ubuntu咸鱼">
+    <meta property="og:type" content="article">
+    <meta property="og:locale" content="zh_CN" />
+    
+    <meta property="article:published_time" content="2019-09-17">
+    
+    <script src="http://localhost:4000/assets/vendor/jquery/dist/jquery.min.js"></script>
+    <script src="http://localhost:4000/assets/js/jquery-ui.js"></script>
+    <script type="text/javascript">
+    function toggleMenu() {
+        var nav = document.getElementsByClassName("site-header-nav")[0];
+        if (nav.style.display == "inline-flex") {
+          nav.style.display = "none";
+        } else {
+          nav.style.display = "inline-flex";
+        }
+    }
+    </script>
+</head>
+<body class="" data-mz="">
+    <header class="site-header">
+        <div class="container">
+            <h1><a href="http://localhost:4000/" title="ubuntu咸鱼"><span class="octicon octicon-mark-github"></span> ubuntu咸鱼</a></h1>
+            <button class="collapsed mobile-visible" type="button" onclick="toggleMenu();">
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+              <span class="icon-bar"></span>
+            </button>
+            <nav class="site-header-nav" role="navigation">
+                
+                <a href="http://localhost:4000/" class=" site-header-nav-item" target="" title="Home">Home</a>
+                
+                <a href="http://localhost:4000/categories/" class=" site-header-nav-item" target="" title="Blog">Blog</a>
+                
+                <a href="http://localhost:4000/open-source/" class=" site-header-nav-item" target="" title="Open-source">Open-source</a>
+                
+                <a href="http://localhost:4000/wiki/" class=" site-header-nav-item" target="" title="Wiki">Wiki</a>
+                
+                <a href="http://localhost:4000/links/" class=" site-header-nav-item" target="" title="Link">Link</a>
+                
+                <a href="http://localhost:4000/about/" class=" site-header-nav-item" target="" title="About">About</a>
+                
+            </nav>
+        </div>
+    </header>
+    <!-- / header -->
+
+
+    <section class="collection-head small geopattern" data-pattern-id="HBase 误删表恢复">
+<div class="container">
+  <div class="columns">
+    <div class="column three-fourths">
+      <div class="collection-title">
+        <h1 class="collection-header">HBase 误删表恢复</h1>
+        <div class="collection-info">
+          
+          <span class="meta-info">
+            <span class="octicon octicon-calendar"></span> 2019/09/17
+          </span>
+          
+          
+          <span class="meta-info">
+            <span class="octicon octicon-file-directory"></span>
+            <a href="http://localhost:4000/categories/#HBase" title="HBase">HBase</a>
+          </span>
+          
+          
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+<!-- / .banner -->
+<section class="container content">
+<div class="columns">
+  <div class="column three-fourths" >
+    <article class="article-content markdown-body">
+    <p>HBase 误删表</p>
+
+<hr />
+
+<h4 id="前言">前言</h4>
+
+<p>HBase 的数据主要存储在分布式文件系统 HFile 和 HLog 两类文件中。Compaction操作会将合并完的不用的小 HFile 移动到 archive 文件夹。WAL 文件在数据完全 flush 到 HFile 中时便会过期，
+被移动到oldWALs文件夹中。</p>
+
+<p>HMaster 上的定时线程 HFileCleaner/LogCleaner 周期性扫描 archive 目录和 oldWALs 目录, 判断目录下的HFile或者WAL是否可以被删除，如果可以,就直接删除文件。</p>
+
+<h4 id="分析">分析</h4>
+
+<p>关于 HFile 文件和 HLog 文件的过期时间，其中涉及到两个参数</p>
+
+<p><strong>hbase.master.logcleaner.ttl</strong></p>
+
+<p>HLog在 oldWAL 目录中生存的最长时间，过期则被 Master 的线程清理，默认是600000（ms）</p>
+
+<p><img src="/images/blog/2019-09-17-2.png" alt="" height="80%" width="80%" /></p>
+
+<p><strong>hbase.master.hfilecleaner.plugins</strong></p>
+
+<p>HFile的清理插件列表，逗号分隔，被HFileService调用，可以自定义，默认org.apache.hadoop.hbase.master.cleaner.TimeToLiveHFileCleaner。</p>
+
+<p><img src="/images/blog/2019-09-17-3.png" alt="" height="80%" width="80%" /></p>
+
+<p>官方文档解释</p>
+
+<p><img src="/images/blog/2019-09-17-4.png" alt="" height="80%" width="80%" /></p>
+
+<p>在类org.apache.hadoop.hbase.master.cleaner.TimeToLiveHFileCleaner中，可以看到如下的设置</p>
+
+<p>默认 HFile 的失效时间是5分钟。由于一般的hadoop平台默认都没有对该参数的设置，可以在配置选项中添加对hbase.master.hfilecleaner.ttl的设置。</p>
+
+<p><img src="/images/blog/2019-09-17-5.png" alt="" height="80%" width="80%" /></p>
+
+<p>实际在测试的过程中，删除一个hbase表，在archive文件夹中，会立即发现删除表的所有region数据（不包含regioninfo、tabledesc等元数据文件），等待不到6分钟所有数据消失，说明所有数据生命周期结束，被删除。</p>
+
+<h4 id="恢复">恢复</h4>
+
+<p>删除表步骤 distable + drop。当然 truncate 清除表数据也可以通过这种方式恢复</p>
+
+<h5 id="抢救数据">抢救数据</h5>
+
+<p>保证在删除表之后的5分钟之内将 HDFS 目录 /hbase/archive/ 文件夹下的表 region 数据拷贝到 /tmp 下。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>hadoop fs -cp /hbase/archive/data/default/{tableName}  /tmp
+</code></pre></div></div>
+
+<h5 id="建表">建表</h5>
+
+<p>新建同名和同列族的表</p>
+
+<p>注意: <strong>请提供表结构，如果表结构未提供，将很难恢复</strong></p>
+
+<h5 id="拷贝">拷贝</h5>
+
+<p>将抢救下来的 region 数据拷贝到 hbase 表对应的目录下</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>hadoop fs -cp /tmp/data/default/test/* /hbase/data/default/test
+</code></pre></div></div>
+
+<h5 id="元数据修复">元数据修复</h5>
+
+<p>HDFS 里有对应的 Region 数据了。想当然是想到用-fixMeta修复</p>
+
+<p>-fixMeta: 主要修复.regioninfo文件和hbase:meta元数据表的不一致。修复的原则是以HDFS文件为准：如果region在HDFS上存在，但在hbase.meta表中不存在，就会在hbase:meta表中添加一条记录。反之如果在HDFS上不存在，而在hbase:meta表中存在，就会将hbase:meta表中对应的记录删除。</p>
+
+<p>但是因为缺少 regioninfo 信息，不能直接用 -fixMeta 修复。所以得先修复下 regioninfo、tableinfo</p>
+
+<p>-fixHdfsOrphans: 尝试修复hdfs中没有.regioninfo文件的region目录</p>
+
+<p>-fixTableOrphans: 尝试修复hdfs中没有.tableinfo文件的table目录（只支持在线模式）</p>
+
+<p>尝试先用fixHdfsOrphans,fixTableOrphans,fixMeta的顺序进行修复，失败。</p>
+
+<p>最后用-repair修复，但是内部的执行顺序可能不对，执行一遍失败，多执行几遍，成功。</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sudo -u hbase hbase hbck -repair {tableName}
+</code></pre></div></div>
+
+<h5 id="验证">验证</h5>
+
+<p>通过 HBase Shell 验证</p>
+
+<h4 id="总结">总结</h4>
+
+<p>-repair 属于高危修复命令。要慎用，我指定 tableName 是避免 repair 影响到其他表</p>
+
+<p>这里是说删表恢复。误删表数据也有恢复方法。<a href="https://mp.weixin.qq.com/s/XBwan9ZOCrOM565Cdw6Z0A">误删HBase数据如何抢救？</a></p>
+
+<p>感兴趣自己研读</p>
+
+<hr />
+<p>参考链接</p>
+<ul>
+  <li><a href="https://blog.csdn.net/chaolovejia/article/details/48265335">HDFS和Hbase误删数据恢复</a></li>
+  <li><a href="https://www.cnblogs.com/yingjie2222/p/6377359.html">HBase之disable+drop删除表疑点解惑</a></li>
+</ul>
+
+
+    </article>
+    <div class="share">
+      <div class="share-component"></div>
+    </div>
+    <div class="comment">
+      
+
+  
+
+  
+        <div id="gitalk-container"></div>
+        <link rel="stylesheet" href="https://unpkg.com/gitalk/dist/gitalk.css">
+        <script src="https://unpkg.com/gitalk/dist/gitalk.min.js"></script>
+        <script>
+        var gitalk = new Gitalk({
+            id: '/2019/09/17/HBase-wrong-deletion-table/',
+            clientID: 'e171e4ef3d8128b9ad4c',
+            clientSecret: '8965fddcd7cfe0ba4bfb49550e23850dea558db3',
+            repo: 'zemingyan.github.io',
+            owner: 'zemingyan',
+            admin: ['zemingyan'],
+            labels: ['gitment'],
+            perPage: 50,
+        })
+        gitalk.render('gitalk-container')
+        </script>
+  
+
+
+    </div>
+  </div>
+  <div class="column one-fourth">
+    
+<h3>Search</h3>
+<div id="site_search">
+    <input type="text" id="search_box" placeholder="Search">
+</div>
+
+<ul id="search_results"></ul>
+
+<link rel="stylesheet" type="text/css" href="http://localhost:4000/assets/css/modules/sidebar-search.css">
+<script src="http://localhost:4000/assets/js/jekyll-search.min.js"></script>
+<script src="http://localhost:4000/assets/js/search.js"></script>
+
+<script type="text/javascript">
+SimpleJekyllSearch({
+    searchInput: document.getElementById('search_box'),
+    resultsContainer: document.getElementById('search_results'),
+    json: 'http://localhost:4000/assets/search_data.json',
+    searchResultTemplate: '<li><a href="{url}" title="{desc}">{title}</a></li>',
+    noResultsText: 'No results found',
+    limit: 10,
+    fuzzy: false,
+    exclude: ['Welcome']
+})
+</script>
+
+    
+
+    
+<h3 class="post-directory-title mobile-hidden">Table of Contents</h3>
+<div id="post-directory-module" class="mobile-hidden">
+  <section class="post-directory">
+  <!-- Links that trigger the jumping -->
+  <!-- Added by javascript below -->
+  <dl></dl>
+  </section>
+</div>
+
+<script src="http://localhost:4000/assets/js/jquery.toc.js"></script>
+
+  </div>
+</div>
+</section>
+<!-- /section.content -->
+
+    <footer class="container">
+        <div class="site-footer" role="contentinfo">
+            <div class="copyright left mobile-block">
+                    © 2018
+                    <span title="zemingyan">zemingyan</span>
+                    <a href="javascript:window.scrollTo(0,0)" class="right mobile-visible">TOP</a>
+            </div>
+
+            <ul class="site-footer-links right mobile-hidden">
+                <li>
+                    <a href="javascript:window.scrollTo(0,0)" >TOP</a>
+                </li>
+            </ul>
+            <a href="http://github.com/zemingyan/zemingyan.github.io" target="_blank" aria-label="view source code">
+                <span class="mega-octicon octicon-mark-github" title="GitHub"></span>
+            </a>
+            <ul class="site-footer-links mobile-hidden">
+                
+                <li>
+                    <a href="http://localhost:4000/" title="Home" target="">Home</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/categories/" title="Blog" target="">Blog</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/open-source/" title="Open-source" target="">Open-source</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/wiki/" title="Wiki" target="">Wiki</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/links/" title="Link" target="">Link</a>
+                </li>
+                
+                <li>
+                    <a href="http://localhost:4000/about/" title="About" target="">About</a>
+                </li>
+                
+                <li><a href="http://localhost:4000/feed.xml"><span class="octicon octicon-rss" style="color:orange;"></span></a></li>
+            </ul>
+
+        </div>
+    </footer>
+    <!-- / footer -->
+    <script src="http://localhost:4000/assets/vendor/share.js/dist/js/share.min.js"></script>
+    <script src="http://localhost:4000/assets/js/geopattern.js"></script>
+    <script src="http://localhost:4000/assets/js/prism.js"></script>
+    <link rel="stylesheet" href="http://localhost:4000/assets/css/globals/prism.css">
+    <script>
+      jQuery(document).ready(function($) {
+        // geopattern
+        $('.geopattern').each(function(){
+          $(this).geopattern($(this).data('pattern-id'));
+        });
+       // hljs.initHighlightingOnLoad();
+      });
+    </script>
+
+    
+
+    
+
+    
+
+    
+
+    
+    <div style="display:none">
+      <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+        ga('create', 'UA-148378051-1', 'auto');
+        ga('send', 'pageview');
+
+      </script>
+    </div>
+    
+</body>
+</html>
+
