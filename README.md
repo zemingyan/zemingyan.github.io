@@ -1,6 +1,6 @@
-# 图
+# ubuntu的咸鱼
 
-我的个人博客：<https://lihuimintu.github.io/>
+我的个人博客：<https://zemingyan.github.io/>
 
 ## 概览
 
