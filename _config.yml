@@ -2,7 +2,6 @@
 #   Main Configs   #
 # ---------------- #
 baseurl:
-#url: http://github.com/lihuimintu/lihuimintu.github.io
 date_format: "ordinal"
 title: ubuntu咸鱼
 subtitle: "Simple maybe, but not easy"

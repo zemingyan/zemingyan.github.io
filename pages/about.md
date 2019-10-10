@@ -2,7 +2,7 @@
 layout: page
 title: About
 description: tu's Personal Blog
-keywords: lihuimintu, tu, 图 
+keywords: zemingyan 
 comments: true
 menu: 关于
 permalink: /about/
@@ -16,9 +16,8 @@ subtitle:   <h3>Download My CV</h3>
                             
 ---
 
-个人本职工作是一个大数据运维开发工程师。
+个人本职工作是一个java大数据开发工程师。
 
-通过记录博客的方式记录自己成长。记录自己的改变。
 
 记录知识，坚信努力改变人生。
 
