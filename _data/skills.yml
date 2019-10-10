@@ -8,13 +8,13 @@
 
 - name: Research Direction
   keywords:
-      - HBase
-      - Hive
-      - Flink
-      - Kudu
+      - Java
+      - Zookeeper
+      - Linux
+      - Hbase
       - HDFS
       - Yarn
 
 - name: Research Results
   keywords:
-      - HBase
+      - Java
