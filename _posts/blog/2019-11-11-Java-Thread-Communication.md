@@ -8,7 +8,7 @@ keywords: Thread,Thread Pool
 Java线程通信
 ---
 
-#### 　　　　　　　　**java线程通信**
+
 
 在操作系统中，线程之间通信方式最常见的有四种: 临界区，信号量，互斥量，事件。
 
