@@ -5,7 +5,8 @@ categories: [java,mysql]
 description: csv文件导入mysql, spring jpa 自动建表字段乱序
 keywords: jpa, hibernate,mysql
 ---
-
+CSV文件导入MYSQL遇到的事
+---
 
 ### 			　　　　　			CSV文件导入MYSQL遇到的事
 
