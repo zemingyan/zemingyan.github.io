@@ -1,12 +1,15 @@
 ---
 layout: post
-title:　CSV文件导入MYSQL遇到的事
-categories: [Java,Mysql]
+title:  CSV文件导入MYSQL遇到的事
+categories:  [Java]
 description: csv文件导入mysql, spring jpa 自动建表字段乱序
-keywords: jpa, hibernate,mysql
+keywords: Jpa,Hibernate,Mysql
 ---
 CSV文件导入MYSQL遇到的事
 ---
+
+
+
 
 ### 			　　　　　			CSV文件导入MYSQL遇到的事
 
