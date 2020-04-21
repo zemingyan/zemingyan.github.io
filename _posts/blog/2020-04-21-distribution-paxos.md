@@ -70,7 +70,8 @@ paxos中三种角色，
 
 
 
-```The easiest way to choose a value is to have a single acceptor agent. A pro-
+```
+The easiest way to choose a value is to have a single acceptor agent. A pro-
 The easiest way to choose a value is to have a single acceptor agent. A pro-
 poser sends a proposal to the acceptor, who chooses the first proposed value
 that it receives. Although simple, this solution is unsatisfactory because the
@@ -87,7 +88,8 @@ failure of the acceptor makes any further progress impossible.
 
 如上图，如果一个proposer只将自己的value发送给一个acceptor，那最终将无法得到一个一致的value.
 
-```So, let’s try another way of choosing a value. Instead of a single acceptor,
+```
+So, let’s try another way of choosing a value. Instead of a single acceptor,
 let’s use multiple acceptor agents. A proposer sends a proposed value to a
 set of acceptors. An acceptor may accept the proposed value. The value is
 chosen when a large enough set of acceptors have accepted it. How large is
@@ -101,7 +103,8 @@ at most one value
 
 
 
-```we want a value to be chosen
+```
+we want a value to be chosen
 even if only one value is proposed by a single proposer. This suggests the
 requirement:
 P1. An acceptor must accept the first proposal that it receives.
@@ -111,7 +114,8 @@ P1. An acceptor must accept the first proposal that it receives.
 
 **P1 ： 一个Acceptor必须接受收到的第一个proposal(提案)**
 
-```But this requirement raises a problem. Several values could be proposed by
+```
+But this requirement raises a problem. Several values could be proposed by
 But this requirement raises a problem. Several values could be proposed by
 different proposers at about the same time, leading to a situation in which
 every acceptor has accepted a value, but no single value is accepted by a
@@ -122,7 +126,8 @@ to learn which of the values was chosen.
 
 但是这种约束会产生一个问题，当不同的proposer在同一时间将自己的proposal发送给不同的acceptor的时候，不同的acceptor接收到不同的值，并且没有超过半数的acceptor得到相同value的proposal。 还有一种很极端的情况：所有proposal中只有两个value，但是每个value正好被一半的acceptor接收。
 
-```P1 and the requirement that a value is chosen only when it is accepted
+```
+P1 and the requirement that a value is chosen only when it is accepted
 P1 and the requirement that a value is chosen only when it is accepted
 by a majority of acceptors imply that an acceptor must be allowed to accept
 more than one proposal. We keep track of the different proposals that an
