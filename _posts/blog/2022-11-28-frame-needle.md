@@ -1,3 +1,15 @@
+---
+layout: post
+title:  frame-needle
+categories:  [Java]
+description: 包装框架理解
+keywords: frame,needle
+---
+frame-needle
+---
+
+
+
 needle框架大致理解
 
 所谓needle，就是在springboot上封装了一层，主要包括这几个方面，依赖，工具，常用组件的通用包装。
